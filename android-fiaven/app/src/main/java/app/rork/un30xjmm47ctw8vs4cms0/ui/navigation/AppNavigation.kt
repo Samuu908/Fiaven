@@ -79,6 +79,17 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SummaryScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.TeamScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.BusinessAvatar
+import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.ThemeMode
+import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.ThemePrefs
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.automirrored.filled.StickyNote2
@@ -119,6 +130,8 @@ private fun MainShell(vm: AppViewModel) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val data by vm.data.collectAsStateWithLifecycle()
     var showSale by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var closedNotice by remember { mutableStateOf(false) }
@@ -139,12 +152,19 @@ private fun MainShell(vm: AppViewModel) {
                 Column(Modifier.padding(bottom = 8.dp)) {
                     TopAppBar(
                         title = {
-                            Column {
-                                Text("FiaVen", style = MaterialTheme.typography.headlineSmall, color = FV.GreenDark)
-                                Text(
-                                    session?.businessName?.ifBlank { null } ?: "Tu negocio, siempre contigo",
-                                    style = MaterialTheme.typography.bodyMedium, color = FV.Muted,
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                BusinessAvatar(
+                                    data.photo, session?.businessName.orEmpty(), size = 42,
+                                    modifier = Modifier.clickable { nav.navigate("cuenta") },
                                 )
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text("FiaVen", style = MaterialTheme.typography.headlineSmall, color = FV.GreenDark)
+                                    Text(
+                                        session?.businessName?.ifBlank { null } ?: "Tu negocio, siempre contigo",
+                                        style = MaterialTheme.typography.bodyMedium, color = FV.Muted, maxLines = 1,
+                                    )
+                                }
                             }
                         },
                         actions = {
@@ -186,6 +206,14 @@ private fun MainShell(vm: AppViewModel) {
                                     text = { Text("Equipo y accesos") },
                                     leadingIcon = { Icon(Icons.Filled.Groups, null) },
                                     onClick = { menu = false; nav.navigate("equipo") },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (FV.isDark) "Modo claro" else "Modo oscuro") },
+                                    leadingIcon = { Icon(if (FV.isDark) Icons.Filled.LightMode else Icons.Filled.DarkMode, null) },
+                                    onClick = {
+                                        menu = false
+                                        ThemePrefs.set(context, if (FV.isDark) ThemeMode.LIGHT else ThemeMode.DARK)
+                                    },
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Mi cuenta") },

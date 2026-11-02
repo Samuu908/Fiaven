@@ -9,6 +9,9 @@ import app.rork.un30xjmm47ctw8vs4cms0.data.Customer
 import app.rork.un30xjmm47ctw8vs4cms0.data.Backup
 import app.rork.un30xjmm47ctw8vs4cms0.data.Closing
 import app.rork.un30xjmm47ctw8vs4cms0.data.InventorySetting
+import app.rork.un30xjmm47ctw8vs4cms0.data.BusinessPhoto
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.rork.un30xjmm47ctw8vs4cms0.data.Note
 import app.rork.un30xjmm47ctw8vs4cms0.data.Quote
 import app.rork.un30xjmm47ctw8vs4cms0.data.Kinds
@@ -288,6 +291,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setInventory(enabled: Boolean) = repo.saveInventory(InventorySetting(enabled))
+
+    // ---------- business photo (owner sets it, every phone receives it by sync) ----------
+
+    fun setBusinessPhoto(uri: android.net.Uri, onDone: (Boolean) -> Unit) {
+        val s = session.value ?: return
+        if (!s.isOwner) return onDone(false)
+        viewModelScope.launch {
+            val encoded = withContext(Dispatchers.IO) { runCatching { encodePhoto(getApplication(), uri) }.getOrNull() }
+            if (encoded == null) { onDone(false); return@launch }
+            repo.savePhoto(BusinessPhoto(encoded, System.currentTimeMillis(), s.displayName.ifBlank { s.username }))
+            onDone(true)
+        }
+    }
+
+    fun removeBusinessPhoto() {
+        val s = session.value ?: return
+        if (!s.isOwner) return
+        repo.savePhoto(BusinessPhoto("", System.currentTimeMillis(), s.displayName), deleted = true)
+    }
 
     // ---------- cash closing ----------
 

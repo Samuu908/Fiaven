@@ -316,7 +316,7 @@ private fun RecoverDialog(vm: AppViewModel, initialUser: String, onDismiss: () -
 fun fieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = FV.Surface,
     unfocusedContainerColor = FV.Surface,
-    unfocusedBorderColor = androidx.compose.ui.graphics.Color(0xFFD5DDD8),
+    unfocusedBorderColor = FV.Outline,
 )
 
 @Composable

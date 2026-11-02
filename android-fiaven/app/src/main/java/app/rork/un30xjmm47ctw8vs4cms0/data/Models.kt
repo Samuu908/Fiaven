@@ -77,6 +77,10 @@ data class Quote(
 @Serializable
 data class InventorySetting(val enabled: Boolean = false)
 
+/** Business photo set by the owner; a small square JPEG as base64. Synced to every phone of the business. */
+@Serializable
+data class BusinessPhoto(val data: String = "", val updatedAt: Long = 0, val authorName: String = "")
+
 val BACKUP_KINDS = setOf(
     Kinds.PRODUCT, Kinds.CUSTOMER, Kinds.SALE, Kinds.PAYMENT, Kinds.SETTING, Kinds.NOTE, Kinds.CLOSING, Kinds.QUOTE,
 )

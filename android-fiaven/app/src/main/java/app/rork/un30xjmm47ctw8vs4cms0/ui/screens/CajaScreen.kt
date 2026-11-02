@@ -310,7 +310,7 @@ fun ActivityRow(a: ActivityItem, onClick: () -> Unit) {
         IconBadge(
             if (a.isPayment) Icons.Filled.Payments else Icons.Filled.ShoppingCart,
             if (a.fiado) FV.AmberText else FV.Muted,
-            if (a.fiado) FV.AmberSoft else androidx.compose.ui.graphics.Color(0xFFF0F3F1),
+            if (a.fiado) FV.AmberSoft else FV.Neutral,
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {

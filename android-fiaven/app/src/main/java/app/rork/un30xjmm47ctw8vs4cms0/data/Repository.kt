@@ -33,6 +33,7 @@ data class AppData(
     val closings: List<Closing> = emptyList(),
     val quotes: List<Quote> = emptyList(),
     val inventory: InventorySetting = InventorySetting(),
+    val photo: BusinessPhoto? = null,
     val dirtyKeys: Set<String> = emptySet(),
     val loaded: Boolean = false,
 )
@@ -56,6 +57,7 @@ class Repository private constructor(private val appContext: Context) {
 
         const val RATE_ID = "rate"
         const val INVENTORY_ID = "inventory"
+        const val PHOTO_ID = "photo"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -259,6 +261,7 @@ class Repository private constructor(private val appContext: Context) {
         val payments = ArrayList<Payment>()
         var rate = RateSetting()
         var inventory = InventorySetting()
+        var photo: BusinessPhoto? = null
         val notes = ArrayList<Note>()
         val closings = ArrayList<Closing>()
         val quotes = ArrayList<Quote>()
@@ -275,6 +278,7 @@ class Repository private constructor(private val appContext: Context) {
                     Kinds.SETTING -> when (row.id) {
                         RATE_ID -> rate = AppJson.decodeFromString<RateSetting>(row.data)
                         INVENTORY_ID -> inventory = AppJson.decodeFromString<InventorySetting>(row.data)
+                        PHOTO_ID -> photo = AppJson.decodeFromString<BusinessPhoto>(row.data).takeIf { it.data.isNotBlank() }
                     }
                     Kinds.NOTE -> notes += AppJson.decodeFromString<Note>(row.data)
                     Kinds.CLOSING -> closings += AppJson.decodeFromString<Closing>(row.data)
@@ -292,6 +296,7 @@ class Repository private constructor(private val appContext: Context) {
             closings = closings.sortedByDescending { it.dayStart },
             quotes = quotes.sortedByDescending { it.createdAt },
             inventory = inventory,
+            photo = photo,
             dirtyKeys = dirty,
             loaded = true,
         )
@@ -325,6 +330,9 @@ class Repository private constructor(private val appContext: Context) {
 
     fun saveInventory(setting: InventorySetting) =
         writeLocal(Kinds.SETTING, INVENTORY_ID, AppJson.encodeToString(InventorySetting.serializer(), setting))
+
+    fun savePhoto(photo: BusinessPhoto, deleted: Boolean = false) =
+        writeLocal(Kinds.SETTING, PHOTO_ID, AppJson.encodeToString(BusinessPhoto.serializer(), photo), deleted)
 
     fun saveNote(note: Note, deleted: Boolean = false) =
         writeLocal(Kinds.NOTE, note.id, AppJson.encodeToString(Note.serializer(), note), deleted)

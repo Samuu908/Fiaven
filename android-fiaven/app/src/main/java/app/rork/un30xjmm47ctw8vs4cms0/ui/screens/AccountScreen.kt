@@ -2,6 +2,7 @@ package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -74,6 +75,16 @@ import app.rork.un30xjmm47ctw8vs4cms0.data.Backup
 import app.rork.un30xjmm47ctw8vs4cms0.data.Kinds
 import app.rork.un30xjmm47ctw8vs4cms0.ui.dayKey
 import app.rork.un30xjmm47ctw8vs4cms0.ui.shortDate
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.BusinessAvatar
+import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.ThemeMode
+import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.ThemePrefs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,6 +116,22 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
                 vm.parseBackup(text)
             }.onSuccess { pending = it }
                 .onFailure { Toast.makeText(context, it.message ?: "Este archivo no es un respaldo de FiaVen", Toast.LENGTH_LONG).show() }
+        }
+    }
+    val data by vm.data.collectAsStateWithLifecycle()
+    var savingPhoto by remember { mutableStateOf(false) }
+    var removingPhoto by remember { mutableStateOf(false) }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
+        if (picked != null) {
+            savingPhoto = true
+            vm.setBusinessPhoto(picked) { ok ->
+                savingPhoto = false
+                Toast.makeText(
+                    context,
+                    if (ok) "Foto guardada · se verá en todos los teléfonos del negocio" else "No se pudo usar esa imagen",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
         }
     }
     val s = session ?: return
@@ -144,6 +171,72 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Rol", style = MaterialTheme.typography.labelMedium, color = FV.Muted)
                         Text(if (s.isOwner) "Dueño" else "Trabajador", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                    }
+                }
+            }
+
+            SectionHeader("Foto del negocio")
+            FvCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(contentAlignment = Alignment.Center) {
+                        BusinessAvatar(data.photo, s.businessName, size = 84)
+                        if (savingPhoto) CircularProgressIndicator(Modifier.size(28.dp), color = FV.Green, strokeWidth = 3.dp)
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(s.businessName, style = MaterialTheme.typography.titleMedium, color = FV.Ink)
+                        Text(
+                            when {
+                                data.photo != null && s.isOwner -> "Todo tu equipo ve esta foto"
+                                data.photo != null -> "Puesta por ${data.photo?.authorName?.ifBlank { null } ?: "el dueño"}"
+                                s.isOwner -> "Añade el logo o una foto de tu negocio. Se verá en todos los teléfonos."
+                                else -> "El dueño aún no ha puesto una foto del negocio."
+                            },
+                            style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+                        )
+                    }
+                }
+                if (s.isOwner) {
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            enabled = !savingPhoto,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (data.photo != null) "Cambiar foto" else "Elegir foto")
+                        }
+                        if (data.photo != null) {
+                            OutlinedButton(onClick = { removingPhoto = true }, enabled = !savingPhoto, shape = RoundedCornerShape(14.dp)) {
+                                Text("Quitar", color = FV.Danger)
+                            }
+                        }
+                    }
+                }
+            }
+
+            SectionHeader("Apariencia")
+            FvCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Filled.Palette, FV.GreenDark, FV.GreenSoft, size = 40)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Modo oscuro", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                        Text("Solo cambia en este teléfono", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                val options = listOf(ThemeMode.SYSTEM to "Automático", ThemeMode.LIGHT to "Claro", ThemeMode.DARK to "Oscuro")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    options.forEachIndexed { i, (mode, label) ->
+                        SegmentedButton(
+                            selected = ThemePrefs.mode == mode,
+                            onClick = { ThemePrefs.set(context, mode) },
+                            shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                        ) { Text(label) }
                     }
                 }
             }
@@ -223,6 +316,18 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
             current = security?.question,
             onDismiss = { editingSecurity = false },
             onSaved = { editingSecurity = false; onSecuritySaved() },
+        )
+    }
+    if (removingPhoto) {
+        AlertDialog(
+            onDismissRequest = { removingPhoto = false },
+            containerColor = FV.Surface,
+            title = { Text("¿Quitar la foto del negocio?") },
+            text = { Text("Se quitará en todos los teléfonos del negocio.", color = FV.Muted) },
+            confirmButton = {
+                TextButton(onClick = { vm.removeBusinessPhoto(); removingPhoto = false }) { Text("Quitar", color = FV.Danger) }
+            },
+            dismissButton = { TextButton(onClick = { removingPhoto = false }) { Text("Cancelar", color = FV.Muted) } },
         )
     }
     pending?.let { backup ->

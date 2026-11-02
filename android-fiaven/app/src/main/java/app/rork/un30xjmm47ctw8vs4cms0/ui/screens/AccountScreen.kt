@@ -1,0 +1,294 @@
+package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Policy
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.rork.un30xjmm47ctw8vs4cms0.data.SecurityQuestions
+import app.rork.un30xjmm47ctw8vs4cms0.data.normalizeAnswer
+import app.rork.un30xjmm47ctw8vs4cms0.ui.AppViewModel
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.AnswerField
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.ClickableRow
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.FvCard
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.IconBadge
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.InitialsAvatar
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.PasswordField
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.QuestionPicker
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.SectionHeader
+import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit, onSecuritySaved: () -> Unit) {
+    val session by vm.session.collectAsStateWithLifecycle()
+    val security by vm.security.collectAsStateWithLifecycle()
+    val uri = LocalUriHandler.current
+    var editingSecurity by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    val s = session ?: return
+    val hasQuestion = security?.hasQuestion == true
+
+    Scaffold(
+        containerColor = FV.Canvas,
+        topBar = {
+            TopAppBar(
+                title = { Text("Mi cuenta") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Atrás") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = FV.Canvas),
+            )
+        },
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            FvCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    InitialsAvatar(s.displayName.ifBlank { s.username }, 56)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(s.displayName.ifBlank { s.username }, style = MaterialTheme.typography.titleLarge, color = FV.Ink)
+                        Text("@${s.username}", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = FV.Hairline)
+                Spacer(Modifier.height(14.dp))
+                Row {
+                    Column(Modifier.weight(1f)) {
+                        Text("Negocio", style = MaterialTheme.typography.labelMedium, color = FV.Muted)
+                        Text(s.businessName, style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Rol", style = MaterialTheme.typography.labelMedium, color = FV.Muted)
+                        Text(if (s.isOwner) "Dueño" else "Trabajador", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                    }
+                }
+            }
+
+            SectionHeader("Seguridad")
+            FvCard(
+                container = if (security != null && !hasQuestion) FV.AmberTint else FV.Surface,
+                border = if (security != null && !hasQuestion) FV.AmberSoft else FV.Hairline,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(
+                        if (hasQuestion) Icons.Filled.VerifiedUser else Icons.Filled.Shield,
+                        if (hasQuestion) FV.Green else FV.AmberText,
+                        if (hasQuestion) FV.GreenSoft else FV.Surface,
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Pregunta de seguridad", style = MaterialTheme.typography.titleMedium, color = FV.Ink)
+                        Text(
+                            when {
+                                security == null -> "Conéctate a internet para ver su estado"
+                                hasQuestion -> security?.question.orEmpty()
+                                else -> "Aún no la tienes. Sin ella no podrás recuperar tu contraseña."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (security != null && !hasQuestion) FV.AmberText else FV.Muted,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = { editingSecurity = true },
+                    enabled = security != null,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (hasQuestion) "Cambiar pregunta" else "Configurar ahora") }
+            }
+
+            SectionHeader("Privacidad y ayuda")
+            FvCard(contentPadding = PaddingValues(vertical = 4.dp)) {
+                LinkRow(Icons.Filled.Policy, "Política de privacidad", "Qué datos guardamos y por qué") {
+                    runCatching { uri.openUri(vm.privacyUrl) }
+                }
+                HorizontalDivider(color = FV.Hairline, modifier = Modifier.padding(horizontal = 16.dp))
+                LinkRow(Icons.Filled.Info, "Acerca de FiaVen", "Versión, créditos y contacto", onClick = onOpenAbout)
+            }
+
+            FvCard(contentPadding = PaddingValues(vertical = 4.dp)) {
+                LinkRow(Icons.AutoMirrored.Filled.Logout, "Cerrar sesión", "Tus datos siguen guardados en la nube") { vm.logout() }
+                HorizontalDivider(color = FV.Hairline, modifier = Modifier.padding(horizontal = 16.dp))
+                LinkRow(
+                    Icons.Filled.DeleteForever, "Eliminar cuenta",
+                    if (s.isOwner) "Borra tu negocio y todos sus datos" else "Borra tu usuario de este negocio",
+                    tint = FV.Danger,
+                ) { deleting = true }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (editingSecurity) {
+        SecurityDialog(
+            vm,
+            current = security?.question,
+            onDismiss = { editingSecurity = false },
+            onSaved = { editingSecurity = false; onSecuritySaved() },
+        )
+    }
+    if (deleting) DeleteAccountDialog(vm, isOwner = s.isOwner, businessName = s.businessName, onDismiss = { deleting = false })
+}
+
+@Composable
+private fun LinkRow(icon: ImageVector, title: String, subtitle: String, tint: Color = FV.Ink, onClick: () -> Unit) {
+    ClickableRow(onClick) {
+        Icon(icon, null, tint = if (tint == FV.Ink) FV.Muted else tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = tint)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = FV.Muted)
+    }
+}
+
+@Composable
+private fun SecurityDialog(vm: AppViewModel, current: String?, onDismiss: () -> Unit, onSaved: () -> Unit) {
+    var question by remember { mutableStateOf(current?.takeIf { it in SecurityQuestions }.orEmpty()) }
+    var answer by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!loading) onDismiss() },
+        containerColor = FV.Surface,
+        shape = RoundedCornerShape(24.dp),
+        title = { Text("Pregunta de seguridad") },
+        text = {
+            Column(Modifier.imePadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Si olvidas tu contraseña, podrás crear una nueva respondiendo esta pregunta.",
+                    style = MaterialTheme.typography.bodyMedium, color = FV.Muted,
+                )
+                QuestionPicker(question, { question = it })
+                AnswerField(answer, { answer = it })
+                PasswordField(password, { password = it }, "Tu contraseña actual", imeAction = ImeAction.Done)
+                AnimatedVisibility(error != null) {
+                    Text(error.orEmpty(), color = FV.Danger, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    error = when {
+                        question.isBlank() -> "Elige una pregunta"
+                        normalizeAnswer(answer).length < 2 -> "Escribe tu respuesta"
+                        password.isBlank() -> "Escribe tu contraseña actual"
+                        else -> null
+                    }
+                    if (error == null) {
+                        loading = true
+                        vm.setSecurity(password, question, answer, onOk = { loading = false; onSaved() }, onError = { loading = false; error = it })
+                    }
+                },
+                enabled = !loading,
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = FV.Surface, strokeWidth = 2.dp)
+                else Text("Guardar")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("Cancelar", color = FV.Muted) } },
+    )
+}
+
+@Composable
+private fun DeleteAccountDialog(vm: AppViewModel, isOwner: Boolean, businessName: String, onDismiss: () -> Unit) {
+    var password by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!loading) onDismiss() },
+        containerColor = FV.Surface,
+        shape = RoundedCornerShape(24.dp),
+        icon = { IconBadge(Icons.Filled.DeleteForever, FV.Danger, FV.Danger.copy(alpha = 0.1f), 52) },
+        title = { Text("¿Eliminar tu cuenta?") },
+        text = {
+            Column(Modifier.imePadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    if (isOwner)
+                        "Se borrarán para siempre \"$businessName\", sus ventas, fiados, productos, tasas y los accesos de tu equipo. No se puede deshacer."
+                    else
+                        "Se borrará tu usuario. Las ventas que registraste se quedan en el negocio. No se puede deshacer.",
+                    style = MaterialTheme.typography.bodyMedium, color = FV.Ink,
+                )
+                PasswordField(password, { password = it }, "Escribe tu contraseña para confirmar")
+                AnimatedVisibility(error != null) {
+                    Text(error.orEmpty(), color = FV.Danger, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (password.isBlank()) { error = "Escribe tu contraseña"; return@Button }
+                    loading = true
+                    error = null
+                    vm.deleteAccount(password) { loading = false; error = it }
+                },
+                enabled = !loading,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = FV.Danger, contentColor = FV.Surface),
+            ) {
+                if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = FV.Surface, strokeWidth = 2.dp)
+                else Text("Eliminar para siempre")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("Cancelar", color = FV.Muted) } },
+    )
+}

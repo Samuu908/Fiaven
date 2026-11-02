@@ -83,6 +83,20 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.formatNumber
 import androidx.compose.material.icons.filled.Payments
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.ScanButton
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.rememberBarcodeScanner
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 
 private data class CartLine(
     val key: String, val productId: String?, val name: String, val priceCents: Long, val qty: Int, val costCents: Long? = null,
@@ -134,16 +148,36 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
         onError = { error = it },
     )
 
+    var step by remember { mutableStateOf(0) } // 0 = elegir productos, 1 = cobrar
+    val units = cart.sumOf { it.qty }
+    fun changeLine(line: CartLine, delta: Int) {
+        val p = line.productId?.let { id -> data.products.find { it.id == id } }
+        if (p != null) { change(p, delta); return }
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        val i = cart.indexOfFirst { it.key == line.key }
+        if (i >= 0) { val q = cart[i].qty + delta; if (q <= 0) cart.removeAt(i) else cart[i] = cart[i].copy(qty = q) }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = FV.Canvas,
     ) {
+        BackHandler(enabled = step == 1) { step = 0; error = null }
+        AnimatedContent(
+            targetState = step,
+            transitionSpec = {
+                val dir = if (targetState > initialState) 1 else -1
+                (slideInHorizontally { it * dir / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it * dir / 3 } + fadeOut())
+            },
+            label = "saleStep",
+        ) { current ->
+        if (current == 0) {
         Column(Modifier.fillMaxHeight(0.94f).imePadding().navigationBarsPadding().padding(horizontal = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Nueva venta", style = MaterialTheme.typography.headlineSmall, color = FV.Ink)
-                    Text("Agrega productos, elige el tipo y guarda la venta", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                    Text("Paso 1 de 2 · Elige todo lo que se lleva", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
                 }
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Cerrar") }
             }
@@ -184,7 +218,9 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                         items(filtered, key = { it.id }) { p ->
                             val q = qtyOf(p)
                             Row(
-                                Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+                                Modifier.fillMaxWidth()
+                                    .background(if (q > 0) FV.GreenTint else Color.Transparent)
+                                    .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f)) {
@@ -205,7 +241,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                                     FilledTonalIconButton(onClick = { change(p, -1) }, modifier = Modifier.size(36.dp)) {
                                         Icon(Icons.Filled.Remove, "Quitar uno", modifier = Modifier.size(18.dp))
                                     }
-                                    Text("$q", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(32.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    Text("$q", style = MaterialTheme.typography.titleMedium, color = FV.Ink, modifier = Modifier.width(32.dp), textAlign = TextAlign.Center)
                                 }
                                 FilledTonalIconButton(
                                     onClick = { change(p, 1) },
@@ -233,8 +269,87 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                     )
                 }
             }
+            error?.let { Text(it, color = FV.Danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp)) }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    if (cart.isEmpty()) error = "Agrega al menos un producto"
+                    else { error = null; query = ""; step = 1 }
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            ) {
+                if (cart.isEmpty()) {
+                    Text("Elige productos", style = MaterialTheme.typography.titleMedium)
+                } else {
+                    Text(
+                        "OK · $units ${if (units == 1) "artículo" else "artículos"}",
+                        style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f),
+                    )
+                    Text(usd(total), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(20.dp))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        } else {
+        Column(Modifier.fillMaxHeight(0.94f).imePadding().navigationBarsPadding().padding(horizontal = 16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { step = 0; error = null }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Volver a productos") }
+                Column(Modifier.weight(1f)) {
+                    Text("Cobrar", style = MaterialTheme.typography.headlineSmall, color = FV.Ink)
+                    Text("Paso 2 de 2 · Revisa y guarda la venta", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                }
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Cerrar") }
+            }
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Surface(
+                shape = RoundedCornerShape(20.dp), color = FV.Surface, border = BorderStroke(1.dp, FV.Hairline),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    cart.forEachIndexed { i, line ->
+                        if (i > 0) HorizontalDivider(color = FV.Hairline, modifier = Modifier.padding(horizontal = 16.dp))
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(line.name, style = MaterialTheme.typography.bodyLarge, color = FV.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "${line.qty} × ${usd(line.priceCents)} = ${usd(line.priceCents * line.qty)}",
+                                    style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+                                )
+                            }
+                            FilledTonalIconButton(onClick = { changeLine(line, -1) }, modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Filled.Remove, "Quitar uno", modifier = Modifier.size(16.dp))
+                            }
+                            Text("${line.qty}", style = MaterialTheme.typography.titleMedium, color = FV.Ink, modifier = Modifier.width(30.dp), textAlign = TextAlign.Center)
+                            FilledTonalIconButton(
+                                onClick = { changeLine(line, 1) },
+                                modifier = Modifier.size(34.dp),
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = FV.GreenSoft, contentColor = FV.Green),
+                            ) { Icon(Icons.Filled.Add, "Agregar uno", modifier = Modifier.size(16.dp)) }
+                        }
+                    }
+                    if (cart.isEmpty()) {
+                        Text(
+                            "No quedan productos. Vuelve atrás para agregar.",
+                            style = MaterialTheme.typography.bodyMedium, color = FV.Muted, modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                    HorizontalDivider(color = FV.Hairline)
+                    TextButton(onClick = { step = 0; error = null }, modifier = Modifier.padding(horizontal = 6.dp)) {
+                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Agregar más productos")
+                    }
+                }
+            }
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(12.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(selected = !fiado, onClick = { fiado = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Contado") }
                 SegmentedButton(
@@ -288,6 +403,8 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                     )
                 }
             }
+            Spacer(Modifier.height(4.dp))
+            }
 
             Spacer(Modifier.height(10.dp))
             Surface(shape = RoundedCornerShape(20.dp), color = if (fiado) FV.AmberTint else FV.GreenTint, modifier = Modifier.fillMaxWidth()) {
@@ -328,6 +445,8 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                 }
             }
             Spacer(Modifier.height(8.dp))
+        }
+        }
         }
     }
 

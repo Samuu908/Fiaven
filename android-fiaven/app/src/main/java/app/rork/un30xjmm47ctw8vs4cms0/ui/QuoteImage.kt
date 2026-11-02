@@ -10,6 +10,11 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import androidx.core.content.FileProvider
 import app.rork.un30xjmm47ctw8vs4cms0.data.Quote
+import app.rork.un30xjmm47ctw8vs4cms0.data.Sale
+import app.rork.un30xjmm47ctw8vs4cms0.data.SaleItem
+import android.content.ContentValues
+import android.os.Build
+import android.provider.MediaStore
 import java.io.File
 import java.io.FileOutputStream
 
@@ -54,8 +59,64 @@ private fun wrap(text: String, p: Paint, maxWidth: Float): List<String> {
 
 fun quoteNumber(n: Int): String = "N° " + n.toString().padStart(4, '0')
 
+/** Data drawn on a quote or sale invoice image. */
+private class DocData(
+    val kind: String,
+    val number: String,
+    val customerName: String,
+    val customerCedula: String,
+    val customerPhone: String,
+    val createdAt: Long,
+    val rightInfo: String,
+    val items: List<SaleItem>,
+    val totalCents: Long,
+    val rate: Double,
+    val note: String,
+    val footer: String,
+)
+
 /** Draws the quote as an invoice-like image ready to send by WhatsApp. */
-fun renderQuote(quote: Quote, businessName: String): Bitmap {
+fun renderQuote(quote: Quote, businessName: String): Bitmap = renderDoc(
+    DocData(
+        kind = "Presupuesto",
+        number = quoteNumber(quote.number),
+        customerName = quote.customerName,
+        customerCedula = quote.customerCedula,
+        customerPhone = quote.customerPhone,
+        createdAt = quote.createdAt,
+        rightInfo = "Válido hasta ${shortDate(quote.createdAt + quote.validDays * DAY_MS)}",
+        items = quote.items,
+        totalCents = quote.totalCents,
+        rate = quote.rate,
+        note = quote.note,
+        footer = "Precios en dólares; el monto en bolívares cambia según la tasa del día.",
+    ),
+    businessName,
+)
+
+/** Short, stable invoice number for a sale (from its id, so every phone shows the same). */
+fun saleNumber(sale: Sale): String = "N° " + sale.id.filter { it.isLetterOrDigit() }.takeLast(6).uppercase()
+
+/** Sale receipt styled like an electronic invoice: customer, cédula, items, totals in $ and Bs. */
+fun renderSaleInvoice(sale: Sale, businessName: String): Bitmap = renderDoc(
+    DocData(
+        kind = if (sale.isFiado) "Nota de venta · a crédito" else "Nota de venta · contado",
+        number = saleNumber(sale),
+        customerName = sale.customerName.orEmpty(),
+        customerCedula = sale.customerCedula.orEmpty(),
+        customerPhone = sale.customerPhone.orEmpty(),
+        createdAt = sale.createdAt,
+        rightInfo = "Hora ${hourLabel(sale.createdAt)} · Atendió ${sale.authorName}",
+        items = sale.items,
+        totalCents = sale.totalCents,
+        rate = sale.rate,
+        note = "",
+        footer = "Gracias por su compra. Monto en bolívares a la tasa del día de la venta.",
+    ),
+    businessName,
+)
+
+private fun renderDoc(quote: DocData, businessName: String): Bitmap {
     val title = paint(54f, 0xFFFFFFFF.toInt(), bold = true)
     val subtitle = paint(30f, 0xFFD5EADF.toInt())
     val badge = paint(30f, 0xFFFFFFFF.toInt(), bold = true, align = Paint.Align.RIGHT)
@@ -84,10 +145,11 @@ fun renderQuote(quote: Quote, businessName: String): Bitmap {
     // Header band
     c.drawRect(0f, 0f, W, 260f, Paint().apply { color = GREEN })
     c.drawText(ellipsize(businessName.ifBlank { "Mi negocio" }, title, contentW - 300f), M, 120f, title)
-    c.drawText("Presupuesto", M, 172f, subtitle)
-    val pill = RectF(W - M - 250f, 82f, W - M, 142f)
+    c.drawText(quote.kind, M, 172f, subtitle)
+    val pillW = maxOf(250f, badge.measureText(quote.number) + 60f)
+    val pill = RectF(W - M - pillW, 82f, W - M, 142f)
     c.drawRoundRect(pill, 30f, 30f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GREEN_DARK })
-    c.drawText(quoteNumber(quote.number), W - M - 30f, 123f, badge)
+    c.drawText(quote.number, W - M - 30f, 123f, badge)
 
     // Info block
     var y = 260f + 70f
@@ -103,7 +165,7 @@ fun renderQuote(quote: Quote, businessName: String): Bitmap {
         quote.customerPhone.ifBlank { null },
     ).joinToString("  ·  ")
     c.drawText(ellipsize(idLine.ifBlank { " " }, label, contentW / 2 - 20f), M, y, label)
-    c.drawText("Válido hasta ${shortDate(quote.createdAt + quote.validDays * DAY_MS)}", col2, y, label)
+    c.drawText(ellipsize(quote.rightInfo, label, contentW / 2), col2, y, label)
     y += 56f
 
     // Table header
@@ -149,7 +211,7 @@ fun renderQuote(quote: Quote, businessName: String): Bitmap {
     // Footer
     y += 40f
     c.drawLine(M, y, W - M, y, line)
-    c.drawText("Precios en dólares; el monto en bolívares cambia según la tasa del día.", W / 2, y + 52f, foot)
+    c.drawText(ellipsize(quote.footer, foot, contentW), W / 2, y + 52f, foot)
     c.drawText("Hecho con Kashly", W / 2, y + 96f, paint(26f, GREEN, bold = true, align = Paint.Align.CENTER))
     return bmp
 }
@@ -184,5 +246,28 @@ fun shareImage(context: Context, bitmap: Bitmap, fileName: String, text: String,
             if (runCatching { context.startActivity(intent) }.isSuccess) return
         }
     }
-    context.startActivity(Intent.createChooser(base(), "Enviar presupuesto"))
+    context.startActivity(Intent.createChooser(base(), "Enviar"))
+}
+
+/**
+ * Saves [bitmap] to the phone's gallery (Pictures/Kashly). Returns true on success.
+ * Android 9 and older would need a storage permission, so there we return false and the caller shares instead.
+ */
+fun saveImageToGallery(context: Context, bitmap: Bitmap, fileName: String): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+    return runCatching {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Kashly")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+        resolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } ?: return false
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        true
+    }.getOrDefault(false)
 }

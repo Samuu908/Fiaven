@@ -69,10 +69,7 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.timeLabel
 import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
 import app.rork.un30xjmm47ctw8vs4cms0.ui.hourLabel
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -303,6 +300,7 @@ fun CajaScreen(
             },
             onOpenCustomer = (sale?.customerId ?: payment?.customerId)?.let { id -> { selected = null; onOpenCustomer(id) } },
             onDismiss = { selected = null },
+            businessName = vm.session.value?.businessName.orEmpty(),
         )
     }
 }
@@ -311,25 +309,14 @@ fun CajaScreen(
 fun ActivityRow(a: ActivityItem, onClick: () -> Unit) {
     ClickableRow(onClick) {
         IconBadge(
-            when { a.voided -> Icons.Filled.Block; a.isPayment -> Icons.Filled.Payments; else -> Icons.Filled.ShoppingCart },
-            when { a.voided -> FV.Danger; a.fiado -> FV.AmberText; else -> FV.Muted },
-            when { a.voided -> FV.DangerTint; a.fiado -> FV.AmberSoft; else -> FV.Neutral },
+            if (a.isPayment) Icons.Filled.Payments else Icons.Filled.ShoppingCart,
+            if (a.fiado) FV.AmberText else FV.Muted,
+            if (a.fiado) FV.AmberSoft else FV.Neutral,
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                (if (a.voided) "Anulada · " else "") + a.title,
-                style = MaterialTheme.typography.bodyLarge, color = if (a.voided) FV.Muted else FV.Ink,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            Text(a.title, style = MaterialTheme.typography.bodyLarge, color = FV.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${a.author} · ${timeLabel(a.createdAt)}", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
-            if (a.voided) {
-                Text(
-                    a.voidedBy?.let { "Anulada por $it" } ?: "Anulada",
-                    style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, color = FV.Danger,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {
@@ -337,10 +324,9 @@ fun ActivityRow(a: ActivityItem, onClick: () -> Unit) {
                 (if (a.isPayment) "+" else "") + usd(a.amountCents),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = when { a.voided -> FV.Muted; a.fiado -> FV.AmberText; else -> FV.Ink },
-                textDecoration = if (a.voided) TextDecoration.LineThrough else null,
+                color = if (a.fiado) FV.AmberText else FV.Ink,
             )
-            if (!a.voided || a.pending) Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (a.pending) Icons.Filled.Schedule else Icons.Filled.CheckCircle, null,
                     tint = if (a.pending) FV.AmberText else FV.Green, modifier = Modifier.size(13.dp),
@@ -365,8 +351,10 @@ fun ActivityDetailDialog(
     onVoid: () -> Unit,
     onOpenCustomer: (() -> Unit)?,
     onDismiss: () -> Unit,
+    businessName: String = "",
 ) {
     var confirm by remember { mutableStateOf(false) }
+    var showInvoice by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = FV.Surface,
@@ -376,7 +364,7 @@ fun ActivityDetailDialog(
                     sale?.isFiado == true -> "Venta fiada"
                     sale != null -> "Venta de contado"
                     else -> "Abono"
-                } + if (sale?.voided == true || payment?.voided == true) " (anulada)" else ""
+                }
             )
         },
         text = {
@@ -396,7 +384,18 @@ fun ActivityDetailDialog(
                     }
                     Text(bs(sale.totalCents, sale.rate) + " a tasa del momento", color = FV.Muted, style = MaterialTheme.typography.bodySmall)
                     Text("Registrado por ${sale.authorName} · ${timeLabel(sale.createdAt)}", color = FV.Muted, style = MaterialTheme.typography.bodySmall)
-                    if (sale.voided) VoidedLine(sale.voidedByName, sale.voidedAt)
+                    sale.customerCedula?.let { Text("C.I./RIF: ${app.rork.un30xjmm47ctw8vs4cms0.ui.prettyCedula(it)}", color = FV.Muted, style = MaterialTheme.typography.bodySmall) }
+                    if (!confirm) {
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { showInvoice = true },
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        ) {
+                            Icon(Icons.Filled.Receipt, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Ver factura / descargar foto")
+                        }
+                    }
                 }
                 if (payment != null) {
                     Text("Cliente: ${payment.customerName}", color = FV.Ink)
@@ -405,7 +404,6 @@ fun ActivityDetailDialog(
                         Text("Pagó Bs ${app.rork.un30xjmm47ctw8vs4cms0.ui.formatNumber(payment.originalAmount)}", color = FV.Muted)
                     }
                     Text("Registrado por ${payment.authorName} · ${timeLabel(payment.createdAt)}", color = FV.Muted, style = MaterialTheme.typography.bodySmall)
-                    if (payment.voided) VoidedLine(payment.voidedByName, payment.voidedAt)
                 }
                 if (confirm) {
                     Text("¿Seguro? Se quitará de la caja en todos los teléfonos.", color = FV.Danger, style = MaterialTheme.typography.bodyMedium)
@@ -417,35 +415,14 @@ fun ActivityDetailDialog(
             else TextButton(onClick = onDismiss) { Text("Cerrar") }
         },
         dismissButton = {
-            if (canVoid && sale?.voided != true && payment?.voided != true) {
+            if (canVoid) {
                 TextButton(onClick = { if (confirm) onVoid() else confirm = true }) {
                     Text(if (confirm) "Sí, anular" else "Anular", color = FV.Danger)
                 }
             }
         },
     )
-}
-
-/** Red banner inside the detail dialog: who voided the operation and when. */
-@Composable
-private fun VoidedLine(name: String?, at: Long?) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 6.dp)
-            .background(FV.DangerTint, RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.Block, null, tint = FV.Danger, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(10.dp))
-        Column {
-            Text(
-                if (name.isNullOrBlank()) "Anulada" else "Anulada por $name",
-                color = FV.Danger, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                at?.let { timeLabel(it) } ?: "No se registró quién la anuló (versión anterior de la app)",
-                color = FV.Muted, style = MaterialTheme.typography.bodySmall,
-            )
-        }
+    if (showInvoice && sale != null) {
+        SaleInvoiceDialog(sale, businessName, onDismiss = { showInvoice = false })
     }
 }

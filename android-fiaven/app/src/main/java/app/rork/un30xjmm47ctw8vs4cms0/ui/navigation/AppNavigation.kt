@@ -137,6 +137,7 @@ private fun MainShell(vm: AppViewModel) {
     val context = LocalContext.current
     val data by vm.data.collectAsStateWithLifecycle()
     var showSale by rememberSaveable { mutableStateOf(false) }
+    var lastSale by remember { mutableStateOf<app.rork.un30xjmm47ctw8vs4cms0.data.Sale?>(null) }
     var menu by remember { mutableStateOf(false) }
     var closedNotice by remember { mutableStateOf(false) }
 
@@ -394,11 +395,18 @@ private fun MainShell(vm: AppViewModel) {
         NewSaleSheet(
             vm,
             onDismiss = { showSale = false },
-            onSaved = { fiado ->
+            onSaved = { fiado, sale ->
                 showSale = false
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                scope.launch { snackbar.showSnackbar(if (fiado) "Fiado registrado" else "Venta guardada") }
+                if (sale != null) lastSale = sale
+                else scope.launch { snackbar.showSnackbar(if (fiado) "Fiado registrado" else "Venta guardada") }
             },
+        )
+    }
+
+    lastSale?.let { sale ->
+        app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SaleInvoiceDialog(
+            sale, vm.session.value?.businessName.orEmpty(), justSaved = true, onDismiss = { lastSale = null },
         )
     }
 }

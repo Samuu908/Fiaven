@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -96,6 +98,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -134,7 +137,7 @@ class SaleDraft {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> Unit) {
+fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean, app.rork.un30xjmm47ctw8vs4cms0.data.Sale?) -> Unit) {
     val data by vm.data.collectAsStateWithLifecycle()
     val ledger by vm.ledger.collectAsStateWithLifecycle()
     val sync by vm.sync.collectAsStateWithLifecycle()
@@ -152,6 +155,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
     var confirmCancel by remember { mutableStateOf(false) }
     fun cancelSale() { draft.clear(); onDismiss() }
     var showFree by remember { mutableStateOf(false) }
+    var qtyFor by remember { mutableStateOf<CartLine?>(null) } // line whose quantity is being typed
     var error by remember { mutableStateOf<String?>(null) }
 
     val filtered = remember(query, data.products) { data.products.filter { it.matches(query) } }
@@ -174,6 +178,23 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
             error = if (left <= 0) "${p.name} está agotado según el inventario" else "Solo quedan $left de ${p.name}"
         }
     }
+    /** Sets an exact quantity (typed with the keyboard). 0 removes the line. */
+    fun setQty(line: CartLine, q: Int) {
+        val i = cart.indexOfFirst { it.key == line.key }
+        when {
+            q <= 0 -> if (i >= 0) cart.removeAt(i)
+            i >= 0 -> cart[i] = cart[i].copy(qty = q)
+            else -> cart.add(line.copy(qty = q))
+        }
+        error = null
+        val p = line.productId?.let { id -> data.products.find { it.id == id } }
+        val left = p?.let { leftOf(it) }
+        if (p != null && left != null && q > left) {
+            error = if (left <= 0) "${p.name} está agotado según el inventario" else "Solo quedan $left de ${p.name}"
+        }
+    }
+    fun lineFor(p: Product) = cart.find { it.key == p.id } ?: CartLine(p.id, p.id, p.name, p.priceCents, 0, p.costCents)
+
     val scan = rememberBarcodeScanner(
         onResult = { code ->
             val p = vm.productByBarcode(code)
@@ -211,7 +232,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Nueva venta", style = MaterialTheme.typography.headlineSmall, color = FV.Ink)
-                    Text("Paso 1 de 2 · Elige todo lo que se lleva", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                    Text("Paso 1 de 2 · Toca un producto para escribir la cantidad", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
                 }
                 TextButton(onClick = { if (draft.isEmpty) cancelSale() else confirmCancel = true }) {
                     Text("Cancelar", color = FV.Danger)
@@ -256,6 +277,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                             Row(
                                 Modifier.fillMaxWidth()
                                     .background(if (q > 0) FV.GreenTint else Color.Transparent)
+                                    .clickable { qtyFor = lineFor(p) }
                                     .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -277,7 +299,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                                     FilledTonalIconButton(onClick = { change(p, -1) }, modifier = Modifier.size(36.dp)) {
                                         Icon(Icons.Filled.Remove, "Quitar uno", modifier = Modifier.size(18.dp))
                                     }
-                                    Text("$q", style = MaterialTheme.typography.titleMedium, color = FV.Ink, modifier = Modifier.width(32.dp), textAlign = TextAlign.Center)
+                                    QtyBox(q) { qtyFor = lineFor(p) }
                                 }
                                 FilledTonalIconButton(
                                     onClick = { change(p, 1) },
@@ -364,7 +386,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                             FilledTonalIconButton(onClick = { changeLine(line, -1) }, modifier = Modifier.size(34.dp)) {
                                 Icon(Icons.Filled.Remove, "Quitar uno", modifier = Modifier.size(16.dp))
                             }
-                            Text("${line.qty}", style = MaterialTheme.typography.titleMedium, color = FV.Ink, modifier = Modifier.width(30.dp), textAlign = TextAlign.Center)
+                            QtyBox(line.qty) { qtyFor = line }
                             FilledTonalIconButton(
                                 onClick = { changeLine(line, 1) },
                                 modifier = Modifier.size(34.dp),
@@ -400,8 +422,8 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                 ChangeCalculator(total, ledger.effectiveRate, draft)
             }
 
-            AnimatedVisibility(fiado) {
-                Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Datos del cliente (para la factura)", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
                     OutlinedTextField(
                         value = customerCedula,
                         onValueChange = { v ->
@@ -412,7 +434,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                             if (hit != null) { customerName = hit.name; customerPhone = hit.phone; customerId = hit.id }
                             else if (customerId != null && data.customers.find { it.id == customerId }?.cedula?.let(::cedulaDigits) != d) customerId = null
                         },
-                        placeholder = { Text("Cédula (busca al cliente)") },
+                        placeholder = { Text("Cédula o RIF (busca al cliente)") },
                         leadingIcon = { Icon(Icons.Filled.Badge, null) },
                         trailingIcon = {
                             if (customerId != null) Icon(Icons.Filled.CheckCircle, "Cliente encontrado", tint = FV.Green)
@@ -426,7 +448,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                     OutlinedTextField(
                         value = customerName,
                         onValueChange = { customerName = it; customerId = null; error = null },
-                        placeholder = { Text("Cliente") },
+                        placeholder = { Text("Nombre del cliente") },
                         leadingIcon = { Icon(Icons.Filled.Person, null) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
@@ -460,7 +482,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                     OutlinedTextField(
                         value = customerPhone,
                         onValueChange = { customerPhone = it },
-                        placeholder = { Text("Teléfono") },
+                        placeholder = { Text(if (fiado) "Teléfono" else "Teléfono (opcional)") },
                         leadingIcon = { Icon(Icons.Filled.Phone, null) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -468,7 +490,6 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                         colors = fieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                }
             }
             Spacer(Modifier.height(4.dp))
             }
@@ -488,15 +509,16 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                         onClick = {
                             when {
                                 cart.isEmpty() -> error = "Agrega al menos un producto"
-                                fiado && customerName.isBlank() -> error = "Escribe el nombre del cliente"
+                                customerName.isBlank() -> error = "Escribe el nombre del cliente"
+                                cedulaDigits(customerCedula).length < 5 -> error = "Escribe la cédula o RIF del cliente"
                                 else -> {
-                                    vm.saveSale(
+                                    val sale = vm.saveSale(
                                         cart.map { SaleItem(it.productId, it.name, it.priceCents, it.qty, it.costCents) },
                                         fiado, customerName, customerPhone, customerId, customerCedula,
                                     )
                                     val wasFiado = fiado
                                     draft.clear()
-                                    onSaved(wasFiado)
+                                    onSaved(wasFiado, sale)
                                 }
                             }
                         },
@@ -534,6 +556,20 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                 TextButton(onClick = { confirmCancel = false; cancelSale() }) { Text("Sí, cancelar", color = FV.Danger) }
             },
             dismissButton = { TextButton(onClick = { confirmCancel = false }) { Text("Seguir vendiendo") } },
+        )
+    }
+
+    qtyFor?.let { line ->
+        val p = line.productId?.let { id -> data.products.find { it.id == id } }
+        QuantityDialog(
+            name = line.name,
+            current = cart.find { it.key == line.key }?.qty ?: 0,
+            stockLeft = p?.let { leftOf(it) },
+            onDismiss = { qtyFor = null },
+            onSet = { q ->
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                setQty(line, q); qtyFor = null
+            },
         )
     }
 
@@ -674,6 +710,22 @@ private fun ChangeCalculator(totalCents: Long, rate: Double, draft: SaleDraft) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** Quantity shown between − and +; tap it to type the number. */
+@Composable
+private fun QtyBox(qty: Int, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = FV.Surface,
+        border = BorderStroke(1.dp, FV.Hairline),
+        modifier = Modifier.padding(horizontal = 6.dp).widthIn(min = 44.dp).height(36.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+            Text("$qty", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = FV.Ink, textAlign = TextAlign.Center)
         }
     }
 }

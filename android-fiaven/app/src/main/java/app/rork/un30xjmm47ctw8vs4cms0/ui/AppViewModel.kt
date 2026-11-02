@@ -58,9 +58,6 @@ data class ActivityItem(
     val amountCents: Long,
     val pending: Boolean,
     val fiado: Boolean,
-    val voided: Boolean = false,
-    /** Who voided it ("Tú" for me); null if unknown (voided by an older app version). */
-    val voidedBy: String? = null,
 )
 
 data class Ledger(
@@ -163,9 +160,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         val me = s?.username
         val activity = buildList {
-            // Voided ones stay visible (marked) so everyone sees what was cancelled and by whom.
-            for (sale in d.sales.take(60)) add(saleActivity(sale, me, d.dirtyKeys))
-            for (p in d.payments.take(60)) add(paymentActivity(p, me, d.dirtyKeys))
+            for (sale in sales.take(60)) add(saleActivity(sale, me, d.dirtyKeys))
+            for (p in payments.take(60)) add(paymentActivity(p, me, d.dirtyKeys))
         }.sortedByDescending { it.createdAt }.take(60)
 
         return Ledger(
@@ -259,12 +255,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         customerPhone: String,
         existingCustomerId: String?,
         customerCedula: String = "",
-    ) {
-        val s = session.value ?: return
+    ): Sale? {
+        val s = session.value ?: return null
         val now = System.currentTimeMillis()
         var customerId: String? = null
         var name: String? = null
-        if (fiado) {
+        var cedula: String? = null
+        var phone: String? = null
+        // Every sale (contado or fiado) carries the customer so it can print an invoice.
+        if (fiado || customerName.isNotBlank()) {
             val ced = normalizeCedula(customerCedula)
             val existing = existingCustomerId?.let { id -> data.value.customers.find { it.id == id } }
                 ?: ced.takeIf { it.isNotEmpty() }?.let { c -> data.value.customers.find { cedulaDigits(it.cedula) == cedulaDigits(c) } }
@@ -280,8 +279,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             customerId = customer.id
             name = customer.name
+            cedula = customer.cedula.ifBlank { null }
+            phone = customer.phone.ifBlank { null }
         }
-        repo.saveSale(
+        val sale =
             Sale(
                 id = repo.newId(),
                 type = if (fiado) "fiado" else "contado",
@@ -293,8 +294,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 authorUser = s.username,
                 authorName = s.displayName,
                 createdAt = now,
+                customerCedula = cedula,
+                customerPhone = phone,
             )
-        )
+        repo.saveSale(sale)
+        return sale
     }
 
     fun addPayment(balance: CustomerBalance, amountCents: Long, currency: String, original: Double) {
@@ -323,15 +327,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repo.saveCustomer(c)
     }
 
-    fun voidSale(sale: Sale) {
-        val s = session.value
-        repo.saveSale(sale.copy(voided = true, voidedBy = s?.username, voidedByName = s?.displayName, voidedAt = System.currentTimeMillis()))
-    }
-
-    fun voidPayment(payment: Payment) {
-        val s = session.value
-        repo.savePayment(payment.copy(voided = true, voidedBy = s?.username, voidedByName = s?.displayName, voidedAt = System.currentTimeMillis()))
-    }
+    fun voidSale(sale: Sale) = repo.saveSale(sale.copy(voided = true))
+    fun voidPayment(payment: Payment) = repo.savePayment(payment.copy(voided = true))
 
     /** [newStock] = units on hand right now (recount); null keeps the previous count. */
     fun saveProduct(id: String?, name: String, priceCents: Long, costCents: Long?, barcode: String?, newStock: Int?) {

@@ -98,9 +98,33 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 
-private data class CartLine(
+data class CartLine(
     val key: String, val productId: String?, val name: String, val priceCents: Long, val qty: Int, val costCents: Long? = null,
 )
+
+/**
+ * The sale in progress. Lives in the ViewModel so swiping the sheet down by accident
+ * keeps everything; only "Cancelar" or saving the sale clears it.
+ */
+class SaleDraft {
+    val cart = mutableStateListOf<CartLine>()
+    var step by mutableStateOf(0) // 0 = elegir productos, 1 = cobrar
+    var query by mutableStateOf("")
+    var fiado by mutableStateOf(false)
+    var customerName by mutableStateOf("")
+    var customerPhone by mutableStateOf("")
+    var customerId by mutableStateOf<String?>(null)
+    var payCurrency by mutableStateOf("USD")
+    var paid by mutableStateOf("")
+    val units: Int get() = cart.sumOf { it.qty }
+    val isEmpty: Boolean get() = cart.isEmpty() && customerName.isBlank()
+
+    fun clear() {
+        cart.clear(); step = 0; query = ""; fiado = false
+        customerName = ""; customerPhone = ""; customerId = null
+        payCurrency = "USD"; paid = ""
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,12 +135,15 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptic = LocalHapticFeedback.current
 
-    var query by remember { mutableStateOf("") }
-    val cart = remember { mutableStateListOf<CartLine>() }
-    var fiado by remember { mutableStateOf(false) }
-    var customerName by remember { mutableStateOf("") }
-    var customerPhone by remember { mutableStateOf("") }
-    var customerId by remember { mutableStateOf<String?>(null) }
+    val draft = vm.saleDraft
+    var query by draft::query
+    val cart = draft.cart
+    var fiado by draft::fiado
+    var customerName by draft::customerName
+    var customerPhone by draft::customerPhone
+    var customerId by draft::customerId
+    var confirmCancel by remember { mutableStateOf(false) }
+    fun cancelSale() { draft.clear(); onDismiss() }
     var showFree by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -148,8 +175,8 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
         onError = { error = it },
     )
 
-    var step by remember { mutableStateOf(0) } // 0 = elegir productos, 1 = cobrar
-    val units = cart.sumOf { it.qty }
+    var step by draft::step
+    val units = draft.units
     fun changeLine(line: CartLine, delta: Int) {
         val p = line.productId?.let { id -> data.products.find { it.id == id } }
         if (p != null) { change(p, delta); return }
@@ -179,7 +206,9 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                     Text("Nueva venta", style = MaterialTheme.typography.headlineSmall, color = FV.Ink)
                     Text("Paso 1 de 2 · Elige todo lo que se lleva", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
                 }
-                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Cerrar") }
+                TextButton(onClick = { if (draft.isEmpty) cancelSale() else confirmCancel = true }) {
+                    Text("Cancelar", color = FV.Danger)
+                }
             }
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
@@ -301,7 +330,9 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                     Text("Cobrar", style = MaterialTheme.typography.headlineSmall, color = FV.Ink)
                     Text("Paso 2 de 2 · Revisa y guarda la venta", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
                 }
-                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Cerrar") }
+                TextButton(onClick = { if (draft.isEmpty) cancelSale() else confirmCancel = true }) {
+                    Text("Cancelar", color = FV.Danger)
+                }
             }
             Spacer(Modifier.height(10.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -359,7 +390,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
             }
 
             AnimatedVisibility(!fiado && total > 0) {
-                ChangeCalculator(total, ledger.effectiveRate)
+                ChangeCalculator(total, ledger.effectiveRate, draft)
             }
 
             AnimatedVisibility(fiado) {
@@ -427,7 +458,9 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                                         cart.map { SaleItem(it.productId, it.name, it.priceCents, it.qty, it.costCents) },
                                         fiado, customerName, customerPhone, customerId,
                                     )
-                                    onSaved(fiado)
+                                    val wasFiado = fiado
+                                    draft.clear()
+                                    onSaved(wasFiado)
                                 }
                             }
                         },
@@ -448,6 +481,24 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
         }
         }
         }
+    }
+
+    if (confirmCancel) {
+        AlertDialog(
+            onDismissRequest = { confirmCancel = false },
+            containerColor = FV.Surface,
+            title = { Text("¿Cancelar esta venta?") },
+            text = {
+                Text(
+                    "Se borrará lo que elegiste ($units ${if (units == 1) "artículo" else "artículos"} · ${usd(total)}).",
+                    color = FV.Muted,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmCancel = false; cancelSale() }) { Text("Sí, cancelar", color = FV.Danger) }
+            },
+            dismissButton = { TextButton(onClick = { confirmCancel = false }) { Text("Seguir vendiendo") } },
+        )
     }
 
     if (showFree) {
@@ -493,9 +544,9 @@ private fun FreeAmountDialog(onDismiss: () -> Unit, onAdd: (String, Long) -> Uni
 
 /** "Paga con" helper for cash sales: shows the change to hand back, in dollars and bolívares. */
 @Composable
-private fun ChangeCalculator(totalCents: Long, rate: Double) {
-    var currency by remember { mutableStateOf("USD") }
-    var paid by remember { mutableStateOf("") }
+private fun ChangeCalculator(totalCents: Long, rate: Double, draft: SaleDraft) {
+    var currency by draft::payCurrency
+    var paid by draft::paid
     val canBs = rate > 0
     val totalUsd = totalCents / 100.0
     val totalInCurrency = if (currency == "USD") totalUsd else totalUsd * rate

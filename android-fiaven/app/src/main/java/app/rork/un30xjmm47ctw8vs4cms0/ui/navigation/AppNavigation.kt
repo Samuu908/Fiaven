@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Inventory2
@@ -272,8 +273,11 @@ private fun MainShell(vm: AppViewModel) {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (ledger.todayClosing != null) closedNotice = true else showSale = true
                     },
-                    icon = { Icon(Icons.Filled.Add, null) },
-                    text = { Text("Nueva venta") },
+                    icon = { Icon(if (vm.saleDraft.cart.isEmpty()) Icons.Filled.Add else Icons.Filled.ShoppingCart, null) },
+                    text = {
+                        val n = vm.saleDraft.units
+                        Text(if (n == 0) "Nueva venta" else "Continuar venta · $n")
+                    },
                     containerColor = FV.Green,
                     contentColor = FV.Surface,
                 )

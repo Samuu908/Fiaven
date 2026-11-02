@@ -72,6 +72,9 @@ data class Ledger(
 }
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
+    /** Sale in progress; survives closing the sheet by accident. */
+    val saleDraft = app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SaleDraft()
+
     val repo = Repository.get(application).also { it.start() }
 
     val session: StateFlow<Session?> = repo.session
@@ -200,7 +203,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun logout() = repo.logout()
+    fun logout() { saleDraft.clear(); repo.logout() }
 
     fun friendly(e: Exception): String = when (e) {
         is app.rork.un30xjmm47ctw8vs4cms0.data.ApiException -> e.message ?: "Error"

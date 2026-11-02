@@ -79,6 +79,17 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SummaryScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.TeamScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.automirrored.filled.StickyNote2
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import app.rork.un30xjmm47ctw8vs4cms0.ui.hourLabel
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.ClosingScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.NoteEditorScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.NotesScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.QuoteBuilderScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.QuotesScreen
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
@@ -110,6 +121,7 @@ private fun MainShell(vm: AppViewModel) {
     val haptic = LocalHapticFeedback.current
     var showSale by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var closedNotice by remember { mutableStateOf(false) }
 
     fun goTab(r: String) {
         nav.navigate(r) {
@@ -144,6 +156,21 @@ private fun MainShell(vm: AppViewModel) {
                                     text = { Text("Movimientos") },
                                     leadingIcon = { Icon(Icons.Filled.ReceiptLong, null) },
                                     onClick = { menu = false; nav.navigate("movimientos") },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Cierre de caja") },
+                                    leadingIcon = { Icon(Icons.Filled.Lock, null) },
+                                    onClick = { menu = false; nav.navigate("cierre") },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Presupuestos") },
+                                    leadingIcon = { Icon(Icons.Filled.Description, null) },
+                                    onClick = { menu = false; nav.navigate("presupuestos") },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Notas") },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.StickyNote2, null) },
+                                    onClick = { menu = false; nav.navigate("notas") },
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Calculadora") },
@@ -215,7 +242,7 @@ private fun MainShell(vm: AppViewModel) {
                 ExtendedFloatingActionButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        showSale = true
+                        if (ledger.todayClosing != null) closedNotice = true else showSale = true
                     },
                     icon = { Icon(Icons.Filled.Add, null) },
                     text = { Text("Nueva venta") },
@@ -239,6 +266,7 @@ private fun MainShell(vm: AppViewModel) {
                     onOpenSummary = { nav.navigate("resumen") },
                     onOpenAccount = { nav.navigate("cuenta") },
                     onOpenMovements = { nav.navigate("movimientos") },
+                    onOpenClosing = { nav.navigate("cierre") },
                 )
             }
             composable("fiados") { FiadosScreen(vm, onOpen = { nav.navigate("cliente/$it") }) }
@@ -265,10 +293,55 @@ private fun MainShell(vm: AppViewModel) {
                     onSecuritySaved = { scope.launch { snackbar.showSnackbar("Pregunta de seguridad guardada") } },
                 )
             }
+            composable("cierre") {
+                ClosingScreen(
+                    vm, onBack = { nav.popBackStack() },
+                    onClosed = { scope.launch { snackbar.showSnackbar("Caja de hoy cerrada") } },
+                )
+            }
+            composable("notas") { NotesScreen(vm, onBack = { nav.popBackStack() }, onOpen = { nav.navigate("nota/$it") }) }
+            composable("nota/{id}") { backStack ->
+                val id = backStack.arguments?.getString("id")
+                NoteEditorScreen(vm, noteId = id?.takeIf { it != "nueva" }, onBack = { nav.popBackStack() })
+            }
+            composable("presupuestos") {
+                QuotesScreen(vm, onBack = { nav.popBackStack() }, onNew = { nav.navigate("presupuesto/nuevo") })
+            }
+            composable("presupuesto/nuevo") { QuoteBuilderScreen(vm, onBack = { nav.popBackStack() }) }
             composable("acerca") {
                 AboutScreen(vm, onBack = { nav.popBackStack() }, onSaved = { scope.launch { snackbar.showSnackbar("Créditos actualizados") } })
             }
         }
+    }
+
+    val closing = ledger.todayClosing
+    if (closedNotice && closing != null) {
+        val owner = session?.isOwner == true
+        AlertDialog(
+            onDismissRequest = { closedNotice = false },
+            containerColor = FV.Surface,
+            icon = { Icon(Icons.Filled.Lock, null, tint = FV.GreenDark) },
+            title = { Text("La caja de hoy está cerrada") },
+            text = {
+                Text(
+                    "${closing.authorName} cerró el día a las ${hourLabel(closing.createdAt)}. " +
+                        if (owner) "Reabre la caja para anotar más ventas de hoy." else "Pídele al dueño que la reabra para anotar más ventas.",
+                    color = FV.Muted,
+                )
+            },
+            confirmButton = {
+                if (owner) {
+                    TextButton(onClick = { vm.reopenDay(closing); closedNotice = false; showSale = true }) {
+                        Text("Reabrir y vender", color = FV.GreenDark)
+                    }
+                } else {
+                    TextButton(onClick = { closedNotice = false }) { Text("Entendido", color = FV.GreenDark) }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { closedNotice = false; nav.navigate("cierre") }) { Text("Ver cierre", color = FV.Muted) }
+            },
+        )
     }
 
     if (showSale) {

@@ -100,3 +100,42 @@ fun dayName(start: Long): String =
 
 fun dayInitial(start: Long): String =
     SimpleDateFormat("EEE", esLocale).format(Date(start)).take(1).uppercase()
+
+/** Numbers that receive the sales summary by WhatsApp (international format, digits only). */
+val SUMMARY_RECIPIENTS = listOf("584247492706", "584246492706")
+
+fun prettyPhone(digits: String): String =
+    if (digits.length == 12 && digits.startsWith("58")) "+58 ${digits.substring(2, 5)}-${digits.substring(5, 8)}-${digits.substring(8)}"
+    else "+$digits"
+
+/** Plain-text summary ready to paste in WhatsApp (uses *bold*). */
+fun summaryMessage(
+    businessName: String,
+    title: String,
+    period: String,
+    days: List<DaySummary>,
+    rate: Double,
+    includeProfit: Boolean,
+): String {
+    val total = days.fold(DaySummary(days.firstOrNull()?.start ?: 0)) { acc, d -> acc + d }
+    return buildString {
+        appendLine("*${businessName.ifBlank { "FiaVen" }} · $title*")
+        appendLine(period)
+        appendLine()
+        appendLine("Vendido: *${usd(total.soldCents)}*" + if (rate > 0) " (${bs(total.soldCents, rate)})" else "")
+        appendLine("• Contado: ${usd(total.contadoCents)}")
+        appendLine("• Fiado: ${usd(total.fiadoCents)}")
+        appendLine("• Abonos cobrados: ${usd(total.abonosCents)}")
+        appendLine("Entró en caja: *${usd(total.cashInCents)}*")
+        appendLine("Ventas: ${total.salesCount}")
+        if (includeProfit && total.hasCosts) appendLine("Dinero libre: *${usd(total.profitCents)}*")
+        if (days.size > 1) {
+            appendLine()
+            days.forEach { d ->
+                appendLine("${dayName(d.start)}: ${usd(d.soldCents)} · ${d.salesCount} ${if (d.salesCount == 1) "venta" else "ventas"}")
+            }
+        }
+        appendLine()
+        append("Enviado desde FiaVen")
+    }
+}

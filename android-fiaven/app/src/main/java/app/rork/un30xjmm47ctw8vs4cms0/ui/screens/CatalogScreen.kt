@@ -54,6 +54,19 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.components.IconBadge
 import app.rork.un30xjmm47ctw8vs4cms0.ui.parseCents
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
 import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
+import app.rork.un30xjmm47ctw8vs4cms0.ui.StockInfo
+import app.rork.un30xjmm47ctw8vs4cms0.ui.matches
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.ScanButton
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.rememberBarcodeScanner
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Warehouse
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.Box
+import kotlinx.coroutines.launch
 
 @Composable
 fun CatalogScreen(vm: AppViewModel) {
@@ -64,12 +77,26 @@ fun CatalogScreen(vm: AppViewModel) {
     var query by rememberSaveable { mutableStateOf("") }
     var editing by remember { mutableStateOf<Product?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var newBarcode by remember { mutableStateOf<String?>(null) }
+    val inventory = data.inventory.enabled
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val scan = rememberBarcodeScanner(
+        onResult = { code ->
+            val p = vm.productByBarcode(code)
+            when {
+                p != null && isOwner -> editing = p
+                p != null -> query = code
+                isOwner -> { newBarcode = code; creating = true }
+                else -> scope.launch { snackbar.showSnackbar("No hay producto con el código $code") }
+            }
+        },
+        onError = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+    )
 
-    val list = remember(data.products, query) {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) data.products else data.products.filter { it.name.lowercase().contains(q) }
-    }
+    val list = remember(data.products, query) { data.products.filter { it.matches(query) } }
 
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
@@ -97,14 +124,42 @@ fun CatalogScreen(vm: AppViewModel) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Buscar producto") },
+                placeholder = { Text("Buscar producto o código") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
-                trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Limpiar") } },
+                trailingIcon = {
+                    Row {
+                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Limpiar") }
+                        ScanButton(scan)
+                    }
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
                 colors = fieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+        if (isOwner || inventory) {
+            item {
+                Surface(shape = RoundedCornerShape(20.dp), color = FV.Surface, border = BorderStroke(1.dp, FV.Hairline)) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Filled.Warehouse, FV.Green, FV.GreenTint, size = 40)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Controlar inventario", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                            Text(
+                                if (inventory) "Ves cuántos quedan y cuántos se vendieron" else "Opcional: lleva la cuenta de existencias",
+                                style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+                            )
+                        }
+                        if (isOwner) {
+                            Switch(
+                                checked = inventory, onCheckedChange = { vm.setInventory(it) },
+                                colors = SwitchDefaults.colors(checkedTrackColor = FV.Green),
+                            )
+                        }
+                    }
+                }
+            }
         }
         if (!isOwner) {
             item {
@@ -139,6 +194,7 @@ fun CatalogScreen(vm: AppViewModel) {
                                         p.name, style = MaterialTheme.typography.bodyLarge, color = FV.Ink,
                                         maxLines = 2, overflow = TextOverflow.Ellipsis,
                                     )
+                                    if (inventory) StockLine(ledger.stock[p.id])
                                     val cost = p.costCents
                                     if (isOwner && cost != null) {
                                         Text(
@@ -160,14 +216,20 @@ fun CatalogScreen(vm: AppViewModel) {
         }
     }
 
+    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+    }
+
     if (creating || editing != null) {
         ProductDialog(
             product = editing,
             rate = ledger.effectiveRate,
-            onDismiss = { creating = false; editing = null },
-            onSave = { name, cents, cost ->
-                vm.saveProduct(editing?.id, name, cents, cost)
-                creating = false; editing = null
+            inventory = inventory,
+            stockLeft = editing?.let { ledger.stock[it.id]?.left },
+            initialBarcode = newBarcode,
+            onDismiss = { creating = false; editing = null; newBarcode = null },
+            onSave = { name, cents, cost, code, stock ->
+                vm.saveProduct(editing?.id, name, cents, cost, code, stock)
+                creating = false; editing = null; newBarcode = null
             },
             onDelete = editing?.let { p -> { vm.deleteProduct(p); editing = null } },
         )
@@ -178,10 +240,19 @@ fun CatalogScreen(vm: AppViewModel) {
 private fun ProductDialog(
     product: Product?,
     rate: Double,
+    inventory: Boolean,
+    stockLeft: Int?,
+    initialBarcode: String?,
     onDismiss: () -> Unit,
-    onSave: (String, Long, Long?) -> Unit,
+    onSave: (String, Long, Long?, String?, Int?) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
+    var barcode by remember { mutableStateOf(product?.barcode ?: initialBarcode.orEmpty()) }
+    val stockStart = stockLeft?.toString().orEmpty()
+    var stock by remember { mutableStateOf(stockStart) }
+    val stockValue = stock.trim().toIntOrNull()
+    val stockInvalid = stock.isNotBlank() && stockValue == null
+    val scanCode = rememberBarcodeScanner(onResult = { barcode = it })
     var name by remember { mutableStateOf(product?.name.orEmpty()) }
     var price by remember { mutableStateOf(product?.let { centsToInput(it.priceCents) }.orEmpty()) }
     var cost by remember { mutableStateOf(product?.costCents?.let { centsToInput(it) }.orEmpty()) }
@@ -224,13 +295,34 @@ private fun ProductDialog(
                         color = FV.Muted, style = MaterialTheme.typography.bodySmall,
                     )
                 }
+                OutlinedTextField(
+                    barcode, { barcode = it.trim() }, label = { Text("Código de barras (opcional)") }, singleLine = true,
+                    leadingIcon = { Icon(Icons.Filled.QrCode2, null) },
+                    trailingIcon = { ScanButton(scanCode) },
+                    shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                )
+                if (inventory) {
+                    OutlinedTextField(
+                        stock, { stock = it.filter { c -> c.isDigit() || c == '-' }.take(7) },
+                        label = { Text("Unidades en existencia") }, singleLine = true, isError = stockInvalid,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Cuenta lo que tienes ahora; cada venta lo irá descontando.",
+                        color = FV.Muted, style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 if (confirmDelete) Text("¿Borrar este producto? Las ventas anteriores no cambian.", color = FV.Danger)
             }
         },
         confirmButton = {
             TextButton(
-                enabled = name.isNotBlank() && cents != null && cents > 0 && !costInvalid,
-                onClick = { onSave(name, cents ?: 0, costCents) },
+                enabled = name.isNotBlank() && cents != null && cents > 0 && !costInvalid && !stockInvalid,
+                onClick = {
+                    val newStock = if (inventory && stock.trim() != stockStart) stockValue else null
+                    onSave(name, cents ?: 0, costCents, barcode, newStock)
+                },
             ) { Text("Guardar") }
         },
         dismissButton = {
@@ -244,4 +336,17 @@ private fun ProductDialog(
             }
         },
     )
+}
+
+@Composable
+private fun StockLine(info: StockInfo?) {
+    val left = info?.left
+    val sold = info?.sold ?: 0
+    val (text, color) = when {
+        left == null -> "Sin contar · vendidos $sold" to FV.Muted
+        left <= 0 -> "Agotado · vendidos $sold" to FV.Danger
+        left <= 3 -> "Quedan $left · vendidos $sold" to FV.AmberText
+        else -> "Quedan $left · vendidos $sold" to FV.Green
+    }
+    Text(text, style = MaterialTheme.typography.bodySmall, color = color, fontWeight = FontWeight.Medium)
 }

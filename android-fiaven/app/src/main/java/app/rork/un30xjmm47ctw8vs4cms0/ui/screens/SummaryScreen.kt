@@ -70,6 +70,19 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.MoneyHuge
 import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
 import app.rork.un30xjmm47ctw8vs4cms0.ui.weekLabel
 import app.rork.un30xjmm47ctw8vs4cms0.ui.weekStart
+import android.content.Intent
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
+import app.rork.un30xjmm47ctw8vs4cms0.ui.SUMMARY_RECIPIENTS
+import app.rork.un30xjmm47ctw8vs4cms0.ui.WeekSummary
+import app.rork.un30xjmm47ctw8vs4cms0.ui.prettyPhone
+import app.rork.un30xjmm47ctw8vs4cms0.ui.summaryMessage
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.IconBadge
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -145,6 +158,8 @@ fun SummaryScreen(vm: AppViewModel, onBack: () -> Unit) {
             if (isOwner) {
                 item { ProfitCard(total, rate) }
             }
+
+            item { SendSummaryCard(week, session?.businessName.orEmpty(), rate, isOwner) }
 
             item { SectionHeader("Día por día") }
 
@@ -353,5 +368,67 @@ private fun Line(label: String, value: String, color: Color = FV.Ink, bold: Bool
     Row(Modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = FV.Muted, modifier = Modifier.weight(1f))
         Text(value, style = MaterialTheme.typography.bodyMedium, color = color, fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal)
+    }
+}
+
+/** Opens WhatsApp on [phone]'s chat with [text] already written. */
+fun openWhatsAppChat(context: android.content.Context, phone: String, text: String) {
+    val uri = "https://wa.me/$phone?text=${android.net.Uri.encode(text)}".toUri()
+    val apps = listOf("com.whatsapp", "com.whatsapp.w4b")
+    val opened = apps.any { pkg ->
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(pkg)) }.isSuccess
+    }
+    if (!opened) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+}
+
+@Composable
+private fun SendSummaryCard(week: WeekSummary, businessName: String, rate: Double, isOwner: Boolean) {
+    val context = LocalContext.current
+    var weekend by rememberSaveable { mutableStateOf(true) }
+    val days = if (weekend) week.days.takeLast(2) else week.days
+    val period = if (weekend) "${dayName(days.first().start)} y ${dayName(days.last().start).replaceFirstChar { it.lowercase() }}"
+    else weekLabel(week.start)
+    val sold = days.sumOf { it.soldCents }
+
+    FvCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(Icons.AutoMirrored.Filled.Send, FV.GreenDark, FV.GreenSoft)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Enviar resumen por WhatsApp", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                Text("$period · ${usd(sold)} vendido", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SegmentedButton(selected = weekend, onClick = { weekend = true }, shape = SegmentedButtonDefaults.itemShape(0, 2)) {
+                Text("Fin de semana")
+            }
+            SegmentedButton(selected = !weekend, onClick = { weekend = false }, shape = SegmentedButtonDefaults.itemShape(1, 2)) {
+                Text("Semana completa")
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SUMMARY_RECIPIENTS.forEach { phone ->
+                OutlinedButton(
+                    onClick = {
+                        val text = summaryMessage(
+                            businessName,
+                            if (weekend) "Ventas del fin de semana" else "Ventas de la semana",
+                            period, days, rate, includeProfit = isOwner,
+                        )
+                        openWhatsAppChat(context, phone, text)
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Enviar a ${prettyPhone(phone)}", color = FV.GreenDark) }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Se abre WhatsApp con el mensaje listo; solo toca enviar.",
+            style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+        )
     }
 }

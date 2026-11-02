@@ -64,6 +64,26 @@ class LocalDb(context: Context) : SQLiteOpenHelper(context, "fiaven.db", null, 1
         writableDatabase.insertWithOnConflict("records", null, v, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    /**
+     * Writes a record from a backup only if it is missing or older here.
+     * Keeps the original timestamp so newer server data still wins. Returns true when written.
+     */
+    @Synchronized
+    fun putImported(kind: String, id: String, data: String, updatedAt: Long): Boolean {
+        var write = true
+        readableDatabase.rawQuery("SELECT updated_at, deleted FROM records WHERE kind = ? AND id = ?", arrayOf(kind, id)).use { c ->
+            if (c.moveToFirst() && c.getLong(0) >= updatedAt) write = false
+        }
+        if (!write) return false
+        val v = ContentValues().apply {
+            put("kind", kind); put("id", id); put("data", data)
+            put("updated_at", maxOf(updatedAt, 1L))
+            put("deleted", 0); put("dirty", 1)
+        }
+        writableDatabase.insertWithOnConflict("records", null, v, SQLiteDatabase.CONFLICT_REPLACE)
+        return true
+    }
+
     /** Applies a sync round result atomically. */
     @Synchronized
     fun applySync(sent: List<LocalRow>, response: SyncResponse) {

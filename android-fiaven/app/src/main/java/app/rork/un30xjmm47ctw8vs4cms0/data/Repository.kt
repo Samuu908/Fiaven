@@ -29,6 +29,10 @@ data class AppData(
     val sales: List<Sale> = emptyList(),
     val payments: List<Payment> = emptyList(),
     val rate: RateSetting = RateSetting(),
+    val notes: List<Note> = emptyList(),
+    val closings: List<Closing> = emptyList(),
+    val quotes: List<Quote> = emptyList(),
+    val inventory: InventorySetting = InventorySetting(),
     val dirtyKeys: Set<String> = emptySet(),
     val loaded: Boolean = false,
 )
@@ -51,6 +55,7 @@ class Repository private constructor(private val appContext: Context) {
             instance ?: synchronized(this) { instance ?: Repository(context.applicationContext).also { instance = it } }
 
         const val RATE_ID = "rate"
+        const val INVENTORY_ID = "inventory"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -253,6 +258,10 @@ class Repository private constructor(private val appContext: Context) {
         val sales = ArrayList<Sale>()
         val payments = ArrayList<Payment>()
         var rate = RateSetting()
+        var inventory = InventorySetting()
+        val notes = ArrayList<Note>()
+        val closings = ArrayList<Closing>()
+        val quotes = ArrayList<Quote>()
         val dirty = HashSet<String>()
         for (row in rows) {
             if (row.dirty) dirty += "${row.kind}:${row.id}"
@@ -263,7 +272,13 @@ class Repository private constructor(private val appContext: Context) {
                     Kinds.CUSTOMER -> customers += AppJson.decodeFromString<Customer>(row.data)
                     Kinds.SALE -> sales += AppJson.decodeFromString<Sale>(row.data)
                     Kinds.PAYMENT -> payments += AppJson.decodeFromString<Payment>(row.data)
-                    Kinds.SETTING -> if (row.id == RATE_ID) rate = AppJson.decodeFromString<RateSetting>(row.data)
+                    Kinds.SETTING -> when (row.id) {
+                        RATE_ID -> rate = AppJson.decodeFromString<RateSetting>(row.data)
+                        INVENTORY_ID -> inventory = AppJson.decodeFromString<InventorySetting>(row.data)
+                    }
+                    Kinds.NOTE -> notes += AppJson.decodeFromString<Note>(row.data)
+                    Kinds.CLOSING -> closings += AppJson.decodeFromString<Closing>(row.data)
+                    Kinds.QUOTE -> quotes += AppJson.decodeFromString<Quote>(row.data)
                 }
             }
         }
@@ -273,6 +288,10 @@ class Repository private constructor(private val appContext: Context) {
             sales = sales.sortedByDescending { it.createdAt },
             payments = payments.sortedByDescending { it.createdAt },
             rate = rate,
+            notes = notes.sortedWith(compareByDescending<Note> { it.pinned }.thenByDescending { it.updatedAt }),
+            closings = closings.sortedByDescending { it.dayStart },
+            quotes = quotes.sortedByDescending { it.createdAt },
+            inventory = inventory,
             dirtyKeys = dirty,
             loaded = true,
         )
@@ -303,6 +322,51 @@ class Repository private constructor(private val appContext: Context) {
 
     fun saveRate(setting: RateSetting) =
         writeLocal(Kinds.SETTING, RATE_ID, AppJson.encodeToString(RateSetting.serializer(), setting))
+
+    fun saveInventory(setting: InventorySetting) =
+        writeLocal(Kinds.SETTING, INVENTORY_ID, AppJson.encodeToString(InventorySetting.serializer(), setting))
+
+    fun saveNote(note: Note, deleted: Boolean = false) =
+        writeLocal(Kinds.NOTE, note.id, AppJson.encodeToString(Note.serializer(), note), deleted)
+
+    fun saveClosing(closing: Closing, deleted: Boolean = false) =
+        writeLocal(Kinds.CLOSING, closing.id, AppJson.encodeToString(Closing.serializer(), closing), deleted)
+
+    fun saveQuote(quote: Quote, deleted: Boolean = false) =
+        writeLocal(Kinds.QUOTE, quote.id, AppJson.encodeToString(Quote.serializer(), quote), deleted)
+
+    // ---------- backup ----------
+
+    /** Full JSON copy of every live record on this phone. */
+    fun exportBackup(): String {
+        val s = _session.value
+        val rows = db.allRows().filter { !it.deleted }
+        val backup = Backup(
+            businessId = s?.businessId.orEmpty(),
+            businessName = s?.businessName.orEmpty(),
+            exportedAt = System.currentTimeMillis(),
+            records = rows.map { BackupRecord(it.kind, it.id, it.data, it.updatedAt) },
+        )
+        return AppJson.encodeToString(Backup.serializer(), backup)
+    }
+
+    fun parseBackup(json: String): Backup {
+        val b = runCatching { AppJson.decodeFromString(Backup.serializer(), json) }.getOrNull()
+        if (b == null || b.app != "FiaVen") throw IllegalArgumentException("Este archivo no es un respaldo de FiaVen")
+        return b
+    }
+
+    /** Restores records that are missing or older on this phone, then uploads them. Returns how many changed. */
+    fun importBackup(backup: Backup): Int {
+        var changed = 0
+        for (r in backup.records) {
+            if (r.kind !in BACKUP_KINDS || r.id.isBlank() || r.id.length > 64) continue
+            if (db.putImported(r.kind, r.id, r.data, r.updatedAt)) changed++
+        }
+        reload()
+        scope.launch { syncNow() }
+        return changed
+    }
 
     // ---------- BCV ----------
 

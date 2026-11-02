@@ -44,17 +44,21 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.components.InitialsAvatar
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.MoneyLarge
 import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.foundation.layout.Arrangement.spacedBy
 
 @Composable
 fun FiadosScreen(vm: AppViewModel, onOpen: (String) -> Unit) {
     val ledger by vm.ledger.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var showPaid by rememberSaveable { mutableStateOf(false) }
+    var onlyOverdue by rememberSaveable { mutableStateOf(false) }
     val owing = ledger.balances.count { it.owedCents > 0 }
-    val list = remember(ledger.balances, query, showPaid) {
+    val list = remember(ledger.balances, query, showPaid, onlyOverdue) {
         val q = query.trim().lowercase()
         ledger.balances
-            .filter { showPaid || it.owedCents > 0 }
+            .filter { if (onlyOverdue) it.overdue else showPaid || it.owedCents > 0 }
             .filter { q.isEmpty() || it.name.lowercase().contains(q) || it.phone.contains(q) }
     }
 
@@ -76,6 +80,24 @@ fun FiadosScreen(vm: AppViewModel, onOpen: (String) -> Unit) {
                 )
             }
         }
+        if (ledger.overdue.isNotEmpty()) {
+            item {
+                val n = ledger.overdue.size
+                FvCard(container = FV.DangerTint, border = FV.DangerSoft, onClick = { onlyOverdue = true }, contentPadding = PaddingValues(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Filled.WarningAmber, FV.Danger, FV.Surface)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "$n ${if (n == 1) "deuda vencida" else "deudas vencidas"} · ${usd(ledger.overdueCents)}",
+                                style = MaterialTheme.typography.titleSmall, color = FV.Danger,
+                            )
+                            Text("Más de 15 días sin pagar. Prioridad de cobro.", style = MaterialTheme.typography.bodySmall, color = FV.Ink)
+                        }
+                    }
+                }
+            }
+        }
         item {
             OutlinedTextField(
                 value = query,
@@ -90,7 +112,18 @@ fun FiadosScreen(vm: AppViewModel, onOpen: (String) -> Unit) {
             )
         }
         item {
-            FilterChip(selected = showPaid, onClick = { showPaid = !showPaid }, label = { Text("Mostrar clientes al día") })
+            Row(horizontalArrangement = spacedBy(8.dp)) {
+                if (ledger.overdue.isNotEmpty()) {
+                    FilterChip(
+                        selected = onlyOverdue, onClick = { onlyOverdue = !onlyOverdue },
+                        label = { Text("Vencidos (${ledger.overdue.size})") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = FV.DangerSoft, selectedLabelColor = FV.Danger,
+                        ),
+                    )
+                }
+                FilterChip(selected = showPaid, onClick = { showPaid = !showPaid; onlyOverdue = false }, label = { Text("Mostrar clientes al día") })
+            }
         }
         if (list.isEmpty()) {
             item {
@@ -117,13 +150,21 @@ fun FiadosScreen(vm: AppViewModel, onOpen: (String) -> Unit) {
                                         Text("Abonó ${usd(b.paidCents)}", style = MaterialTheme.typography.bodyMedium, color = FV.Green)
                                         Text("  ·  ", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
                                         Text(
-                                            if (b.owedCents > 0) "Debe ${usd(b.owedCents)}" else "Al día",
+                                            when {
+                                                b.overdue -> "Debe ${usd(b.owedCents)} · ${b.daysOwed} días"
+                                                b.owedCents > 0 -> "Debe ${usd(b.owedCents)}"
+                                                else -> "Al día"
+                                            },
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = if (b.owedCents > 0) FV.AmberText else FV.Green,
+                                            color = when {
+                                                b.overdue -> FV.Danger
+                                                b.owedCents > 0 -> FV.AmberText
+                                                else -> FV.Green
+                                            },
                                         )
                                     }
                                 }
-                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = FV.Muted)
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = if (b.overdue) FV.Danger else FV.Muted)
                             }
                         }
                     }

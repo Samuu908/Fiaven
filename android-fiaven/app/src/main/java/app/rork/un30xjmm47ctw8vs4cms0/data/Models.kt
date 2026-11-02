@@ -8,6 +8,9 @@ object Kinds {
     const val SALE = "sale"
     const val PAYMENT = "payment"
     const val SETTING = "setting"
+    const val NOTE = "note"
+    const val CLOSING = "closing"
+    const val QUOTE = "quote"
 }
 
 @Serializable
@@ -18,6 +21,78 @@ data class Product(
     val createdAt: Long,
     /** Optional purchase price (USD cents), used to calculate profit. */
     val costCents: Long? = null,
+    /** Barcode / EAN printed on the product, used by the scanner. */
+    val barcode: String? = null,
+    /** Units counted on hand at [stockSince]; null = not tracked. */
+    val stock: Int? = null,
+    val stockSince: Long? = null,
+)
+
+/** Free-form note shared by the whole business. */
+@Serializable
+data class Note(
+    val id: String,
+    val title: String,
+    val body: String,
+    val authorName: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val pinned: Boolean = false,
+)
+
+/** End-of-day cash closing. id = day key "yyyy-MM-dd". */
+@Serializable
+data class Closing(
+    val id: String,
+    val dayStart: Long,
+    val cashSalesCents: Long,
+    val paymentsCents: Long,
+    val fiadoCents: Long,
+    val salesCount: Int,
+    val expectedCents: Long,
+    val countedCents: Long? = null,
+    val note: String = "",
+    val rate: Double = 0.0,
+    val authorUser: String,
+    val authorName: String,
+    val createdAt: Long,
+)
+
+/** Price quote (presupuesto) sent to a customer as an invoice-like image. */
+@Serializable
+data class Quote(
+    val id: String,
+    val number: Int,
+    val customerName: String,
+    val customerPhone: String = "",
+    val items: List<SaleItem>,
+    val totalCents: Long,
+    val rate: Double,
+    val note: String = "",
+    val validDays: Int = 7,
+    val authorName: String,
+    val createdAt: Long,
+)
+
+@Serializable
+data class InventorySetting(val enabled: Boolean = false)
+
+val BACKUP_KINDS = setOf(
+    Kinds.PRODUCT, Kinds.CUSTOMER, Kinds.SALE, Kinds.PAYMENT, Kinds.SETTING, Kinds.NOTE, Kinds.CLOSING, Kinds.QUOTE,
+)
+
+@Serializable
+data class BackupRecord(val kind: String, val id: String, val data: String, val updatedAt: Long)
+
+/** File written by "Descargar respaldo". */
+@Serializable
+data class Backup(
+    val app: String = "FiaVen",
+    val version: Int = 1,
+    val businessId: String = "",
+    val businessName: String = "",
+    val exportedAt: Long = 0,
+    val records: List<BackupRecord> = emptyList(),
 )
 
 @Serializable

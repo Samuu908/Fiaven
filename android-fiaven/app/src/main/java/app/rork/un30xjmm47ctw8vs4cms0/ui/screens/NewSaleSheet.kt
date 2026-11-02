@@ -77,6 +77,12 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.parseCents
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.MoneyLarge
 import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
+import app.rork.un30xjmm47ctw8vs4cms0.ui.matches
+import app.rork.un30xjmm47ctw8vs4cms0.ui.parseDecimal
+import app.rork.un30xjmm47ctw8vs4cms0.ui.formatNumber
+import androidx.compose.material.icons.filled.Payments
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.ScanButton
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.rememberBarcodeScanner
 
 private data class CartLine(
     val key: String, val productId: String?, val name: String, val priceCents: Long, val qty: Int, val costCents: Long? = null,
@@ -100,10 +106,9 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
     var showFree by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val filtered = remember(query, data.products) {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) data.products else data.products.filter { it.name.lowercase().contains(q) }
-    }
+    val filtered = remember(query, data.products) { data.products.filter { it.matches(query) } }
+    val inventory = data.inventory.enabled
+    fun leftOf(p: Product): Int? = if (inventory) ledger.stock[p.id]?.left else null
     val total = cart.sumOf { it.priceCents * it.qty }
 
     fun qtyOf(p: Product) = cart.find { it.key == p.id }?.qty ?: 0
@@ -116,7 +121,18 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
             if (q <= 0) cart.removeAt(i) else cart[i] = cart[i].copy(qty = q)
         }
         error = null
+        val left = leftOf(p)
+        if (delta > 0 && left != null && qtyOf(p) > left) {
+            error = if (left <= 0) "${p.name} está agotado según el inventario" else "Solo quedan $left de ${p.name}"
+        }
     }
+    val scan = rememberBarcodeScanner(
+        onResult = { code ->
+            val p = vm.productByBarcode(code)
+            if (p != null) { change(p, 1); query = "" } else error = "No hay producto con el código $code"
+        },
+        onError = { error = it },
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -135,9 +151,14 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Buscar producto...") },
+                placeholder = { Text("Buscar producto o código...") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
-                trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Limpiar") } },
+                trailingIcon = {
+                    Row {
+                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Limpiar") }
+                        ScanButton(scan)
+                    }
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
                 colors = fieldColors(),
@@ -168,7 +189,17 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text("${p.name} · ${usd(p.priceCents)}", style = MaterialTheme.typography.bodyLarge, color = FV.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(bs(p.priceCents, ledger.effectiveRate), style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+                                    val left = leftOf(p)
+                                    if (left != null) {
+                                        val rest = left - q
+                                        Text(
+                                            "${bs(p.priceCents, ledger.effectiveRate)} · " + if (rest <= 0) "agotado" else "quedan $rest",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = when { rest < 0 -> FV.Danger; rest <= 3 -> FV.AmberText; else -> FV.Muted },
+                                        )
+                                    } else {
+                                        Text(bs(p.priceCents, ledger.effectiveRate), style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+                                    }
                                 }
                                 if (q > 0) {
                                     FilledTonalIconButton(onClick = { change(p, -1) }, modifier = Modifier.size(36.dp)) {
@@ -210,6 +241,10 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                     selected = fiado, onClick = { fiado = true }, shape = SegmentedButtonDefaults.itemShape(1, 2),
                     colors = SegmentedButtonDefaults.colors(activeContainerColor = FV.AmberSoft, activeContentColor = FV.AmberText),
                 ) { Text("Fiado") }
+            }
+
+            AnimatedVisibility(!fiado && total > 0) {
+                ChangeCalculator(total, ledger.effectiveRate)
             }
 
             AnimatedVisibility(fiado) {
@@ -335,4 +370,104 @@ private fun FreeAmountDialog(onDismiss: () -> Unit, onAdd: (String, Long) -> Uni
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
+}
+
+/** "Paga con" helper for cash sales: shows the change to hand back, in dollars and bolívares. */
+@Composable
+private fun ChangeCalculator(totalCents: Long, rate: Double) {
+    var currency by remember { mutableStateOf("USD") }
+    var paid by remember { mutableStateOf("") }
+    val canBs = rate > 0
+    val totalUsd = totalCents / 100.0
+    val totalInCurrency = if (currency == "USD") totalUsd else totalUsd * rate
+    val paidValue = parseDecimal(paid)?.toDouble()
+    // Everything in USD for the math; small epsilon avoids "falta 0,00" from rounding.
+    val paidUsd = paidValue?.let { if (currency == "USD") it else if (canBs) it / rate else null }
+    val diffUsd = paidUsd?.minus(totalUsd)
+    val bills = if (currency == "USD") listOf(5, 10, 20, 50, 100) else listOf(100, 200, 500, 1000, 2000)
+
+    Surface(
+        shape = RoundedCornerShape(20.dp), color = FV.Surface, border = BorderStroke(1.dp, FV.Hairline),
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Payments, null, tint = FV.Green, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Calcular vuelto", style = MaterialTheme.typography.titleSmall, color = FV.Ink, modifier = Modifier.weight(1f))
+                SingleChoiceSegmentedButtonRow(Modifier.width(140.dp)) {
+                    SegmentedButton(
+                        selected = currency == "USD", onClick = { currency = "USD"; paid = "" },
+                        shape = SegmentedButtonDefaults.itemShape(0, 2), icon = {},
+                    ) { Text("$", style = MaterialTheme.typography.labelMedium) }
+                    SegmentedButton(
+                        selected = currency == "BS", enabled = canBs, onClick = { currency = "BS"; paid = "" },
+                        shape = SegmentedButtonDefaults.itemShape(1, 2), icon = {},
+                    ) { Text("Bs", style = MaterialTheme.typography.labelMedium) }
+                }
+            }
+            OutlinedTextField(
+                value = paid,
+                onValueChange = { paid = it },
+                placeholder = { Text(if (currency == "USD") "¿Con cuánto paga? (en $)" else "¿Con cuánto paga? (en Bs)") },
+                supportingText = {
+                    Text(
+                        "Total a cobrar: " + if (currency == "USD") usd(totalCents) else "Bs " + formatNumber(totalInCurrency),
+                        color = FV.Muted,
+                    )
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    SuggestionChip(
+                        onClick = { paid = formatNumber(totalInCurrency).replace(".", "") },
+                        label = { Text("Exacto") },
+                    )
+                }
+                items(bills) { b ->
+                    SuggestionChip(
+                        onClick = { paid = b.toString() },
+                        label = { Text(if (currency == "USD") "$ $b" else "Bs $b") },
+                    )
+                }
+            }
+            if (diffUsd != null) {
+                val missing = diffUsd < -0.004
+                Surface(shape = RoundedCornerShape(14.dp), color = if (missing) FV.DangerTint else FV.GreenTint, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        if (missing) {
+                            val lack = -diffUsd
+                            Text("Falta por pagar", style = MaterialTheme.typography.bodyMedium, color = FV.Danger)
+                            Text(
+                                "$ " + formatNumber(lack) + if (canBs) "  ·  Bs " + formatNumber(lack * rate) else "",
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = FV.Danger,
+                            )
+                        } else {
+                            val change = diffUsd.coerceAtLeast(0.0)
+                            Text("Vuelto a entregar", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    if (currency == "USD") "$ " + formatNumber(change) else "Bs " + formatNumber(change * rate),
+                                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, color = FV.Green,
+                                )
+                                if (canBs) {
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        "o " + if (currency == "USD") "Bs " + formatNumber(change * rate) else "$ " + formatNumber(change),
+                                        style = MaterialTheme.typography.titleMedium, color = FV.Muted,
+                                        modifier = Modifier.padding(bottom = 2.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -67,6 +67,12 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.MoneyHuge
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.MoneyLarge
 import app.rork.un30xjmm47ctw8vs4cms0.ui.timeLabel
 import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
+import app.rork.un30xjmm47ctw8vs4cms0.ui.hourLabel
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +83,7 @@ fun CajaScreen(
     onOpenSummary: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenMovements: () -> Unit,
+    onOpenClosing: () -> Unit,
 ) {
     val security by vm.security.collectAsStateWithLifecycle()
     val ledger by vm.ledger.collectAsStateWithLifecycle()
@@ -145,6 +152,74 @@ fun CajaScreen(
                             shape = SegmentedButtonDefaults.itemShape(1, 2), icon = {},
                         ) { Text("Todo", style = MaterialTheme.typography.labelMedium) }
                     }
+                }
+            }
+        }
+
+        if (ledger.overdue.isNotEmpty()) {
+            item(key = "overdue") {
+                val n = ledger.overdue.size
+                FvCard(container = FV.DangerTint, border = FV.DangerSoft, onClick = onOpenFiados, contentPadding = PaddingValues(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Filled.WarningAmber, FV.Danger, FV.Surface)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "$n ${if (n == 1) "fiado vencido" else "fiados vencidos"} · ${usd(ledger.overdueCents)}",
+                                style = MaterialTheme.typography.titleSmall, color = FV.Danger,
+                            )
+                            Text(
+                                "Llevan más de 15 días sin pagarse. Cóbralos primero.",
+                                style = MaterialTheme.typography.bodySmall, color = FV.Ink,
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = FV.Danger)
+                    }
+                }
+            }
+        }
+
+        val cal = java.util.Calendar.getInstance()
+        val dow = cal.get(java.util.Calendar.DAY_OF_WEEK)
+        val weekendTime = dow == java.util.Calendar.SUNDAY ||
+            (dow == java.util.Calendar.SATURDAY && cal.get(java.util.Calendar.HOUR_OF_DAY) >= 17)
+        if (weekendTime) {
+            item(key = "weekend") {
+                FvCard(onClick = onOpenSummary, contentPadding = PaddingValues(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.AutoMirrored.Filled.Send, FV.GreenDark, FV.GreenSoft)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Resumen del fin de semana", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                            Text("Envíalo por WhatsApp en un toque", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = FV.Muted)
+                    }
+                }
+            }
+        }
+
+        item(key = "closing") {
+            val closing = ledger.todayClosing
+            FvCard(onClick = onOpenClosing, contentPadding = PaddingValues(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(
+                        if (closing != null) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                        FV.GreenDark, FV.GreenSoft,
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (closing != null) "Día cerrado" else "Cerrar caja de hoy",
+                            style = MaterialTheme.typography.titleSmall, color = FV.Ink,
+                        )
+                        Text(
+                            if (closing != null) "A las ${hourLabel(closing.createdAt)} por ${closing.authorName}"
+                            else "Cuenta el efectivo y deja el día listo",
+                            style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = FV.Muted)
                 }
             }
         }

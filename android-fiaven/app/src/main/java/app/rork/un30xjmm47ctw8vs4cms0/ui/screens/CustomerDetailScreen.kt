@@ -70,6 +70,10 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.MoneyLarge
 import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
 import kotlin.math.roundToLong
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.WarningAmber
+import app.rork.un30xjmm47ctw8vs4cms0.ui.components.IconBadge
+import app.rork.un30xjmm47ctw8vs4cms0.ui.shortDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,6 +105,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
         (sales + pays).sortedByDescending { it.createdAt }
     }
 
+    val dayClosed = ledger.todayClosing != null
     var showPay by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<String?>(null) }
@@ -119,13 +124,20 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
             Surface(color = FV.Canvas) {
                 Button(
                     onClick = { showPay = true },
-                    enabled = balance.owedCents > 0,
+                    enabled = balance.owedCents > 0 && !dayClosed,
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.navigationBarsPadding().padding(16.dp).fillMaxWidth().heightIn(min = 54.dp),
                 ) {
-                    Icon(Icons.Filled.Payments, null)
+                    Icon(if (dayClosed && balance.owedCents > 0) Icons.Filled.Lock else Icons.Filled.Payments, null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (balance.owedCents > 0) "Registrar abono" else "Cliente al día", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        when {
+                            balance.owedCents <= 0 -> "Cliente al día"
+                            dayClosed -> "Caja de hoy cerrada"
+                            else -> "Registrar abono"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                 }
             }
         },
@@ -145,10 +157,29 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
                     }
                 }
             }
+            if (balance.overdue) {
+                item {
+                    FvCard(container = FV.DangerTint, border = FV.DangerSoft, contentPadding = PaddingValues(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconBadge(Icons.Filled.WarningAmber, FV.Danger, FV.Surface)
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Deuda con ${balance.daysOwed} días — prioridad de cobro", style = MaterialTheme.typography.titleSmall, color = FV.Danger)
+                                balance.debtSince?.let {
+                                    Text("Debe desde el ${shortDate(it)}", style = MaterialTheme.typography.bodySmall, color = FV.Ink)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             item {
-                FvCard(container = FV.AmberTint, border = FV.AmberSoft) {
+                FvCard(container = if (balance.overdue) FV.DangerTint else FV.AmberTint, border = if (balance.overdue) FV.DangerSoft else FV.AmberSoft) {
                     Text("Debe", style = MaterialTheme.typography.titleSmall, color = FV.Muted)
-                    Text(usd(balance.owedCents), style = MoneyLarge, color = if (balance.owedCents > 0) FV.AmberText else FV.Green)
+                    Text(
+                        usd(balance.owedCents), style = MoneyLarge,
+                        color = when { balance.overdue -> FV.Danger; balance.owedCents > 0 -> FV.AmberText; else -> FV.Green },
+                    )
                     Text(bs(balance.owedCents, ledger.effectiveRate), style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
                     Spacer(Modifier.size(12.dp))
                     HorizontalDivider(color = FV.AmberSoft)

@@ -64,6 +64,16 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.components.PasswordField
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.QuestionPicker
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.SectionHeader
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.ui.platform.LocalContext
+import app.rork.un30xjmm47ctw8vs4cms0.data.Backup
+import app.rork.un30xjmm47ctw8vs4cms0.data.Kinds
+import app.rork.un30xjmm47ctw8vs4cms0.ui.dayKey
+import app.rork.un30xjmm47ctw8vs4cms0.ui.shortDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,6 +83,30 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
     val uri = LocalUriHandler.current
     var editingSecurity by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var pending by remember { mutableStateOf<Backup?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { target ->
+        if (target != null) {
+            val result = runCatching {
+                val json = vm.exportBackup()
+                context.contentResolver.openOutputStream(target)?.use { it.write(json.toByteArray()) } ?: error("No se pudo escribir")
+            }
+            Toast.makeText(
+                context,
+                if (result.isSuccess) "Respaldo guardado" else "No se pudo guardar el respaldo",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+        if (source != null) {
+            runCatching {
+                val text = context.contentResolver.openInputStream(source)?.use { it.readBytes().decodeToString() } ?: error("vacío")
+                vm.parseBackup(text)
+            }.onSuccess { pending = it }
+                .onFailure { Toast.makeText(context, it.message ?: "Este archivo no es un respaldo de FiaVen", Toast.LENGTH_LONG).show() }
+        }
+    }
     val s = session ?: return
     val hasQuestion = security?.hasQuestion == true
 
@@ -148,6 +182,19 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
                 ) { Text(if (hasQuestion) "Cambiar pregunta" else "Configurar ahora") }
             }
 
+            SectionHeader("Respaldo")
+            FvCard(contentPadding = PaddingValues(vertical = 4.dp)) {
+                LinkRow(Icons.Filled.CloudDownload, "Descargar respaldo", "Guarda una copia de todo en tu teléfono") {
+                    saveLauncher.launch("fiaven-respaldo-${dayKey(System.currentTimeMillis())}.json")
+                }
+                if (s.isOwner) {
+                    HorizontalDivider(color = FV.Hairline, modifier = Modifier.padding(horizontal = 16.dp))
+                    LinkRow(Icons.Filled.CloudUpload, "Subir respaldo", "Recupera datos desde un archivo guardado") {
+                        openLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
+                    }
+                }
+            }
+
             SectionHeader("Privacidad y ayuda")
             FvCard(contentPadding = PaddingValues(vertical = 4.dp)) {
                 LinkRow(Icons.Filled.Policy, "Política de privacidad", "Qué datos guardamos y por qué") {
@@ -176,6 +223,54 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
             current = security?.question,
             onDismiss = { editingSecurity = false },
             onSaved = { editingSecurity = false; onSecuritySaved() },
+        )
+    }
+    pending?.let { backup ->
+        val counts = backup.records.groupingBy { it.kind }.eachCount()
+        val other = backup.businessId != s.businessId
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            containerColor = FV.Surface,
+            shape = RoundedCornerShape(24.dp),
+            icon = { IconBadge(Icons.Filled.CloudUpload, FV.GreenDark, FV.GreenSoft, 52) },
+            title = { Text("¿Subir este respaldo?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("De \"${backup.businessName}\" · ${shortDate(backup.exportedAt)}", color = FV.Ink)
+                    Text(
+                        listOf(
+                            Kinds.SALE to "ventas", Kinds.PAYMENT to "abonos", Kinds.CUSTOMER to "clientes",
+                            Kinds.PRODUCT to "productos", Kinds.NOTE to "notas", Kinds.QUOTE to "presupuestos",
+                        ).joinToString(" · ") { (k, label) -> "${counts[k] ?: 0} $label" },
+                        color = FV.Muted, style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (other) {
+                        Text(
+                            "Este respaldo es de otro negocio. Sus datos se mezclarán con los de \"${s.businessName}\".",
+                            color = FV.Danger, style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Text(
+                        "No se borra nada: solo se recupera lo que falte o esté más viejo aquí.",
+                        color = FV.Muted, style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val n = runCatching { vm.importBackup(backup) }.getOrDefault(-1)
+                        pending = null
+                        Toast.makeText(
+                            context,
+                            if (n < 0) "No se pudo subir el respaldo" else "Respaldo subido · $n registros recuperados",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                ) { Text("Subir") }
+            },
+            dismissButton = { TextButton(onClick = { pending = null }) { Text("Cancelar", color = FV.Muted) } },
         )
     }
     if (deleting) DeleteAccountDialog(vm, isOwner = s.isOwner, businessName = s.businessName, onDismiss = { deleting = false })

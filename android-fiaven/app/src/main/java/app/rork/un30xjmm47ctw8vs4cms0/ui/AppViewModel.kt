@@ -6,6 +6,11 @@ import androidx.lifecycle.viewModelScope
 import app.rork.un30xjmm47ctw8vs4cms0.data.AppData
 import app.rork.un30xjmm47ctw8vs4cms0.data.BcvState
 import app.rork.un30xjmm47ctw8vs4cms0.data.Customer
+import app.rork.un30xjmm47ctw8vs4cms0.data.Backup
+import app.rork.un30xjmm47ctw8vs4cms0.data.Closing
+import app.rork.un30xjmm47ctw8vs4cms0.data.InventorySetting
+import app.rork.un30xjmm47ctw8vs4cms0.data.Note
+import app.rork.un30xjmm47ctw8vs4cms0.data.Quote
 import app.rork.un30xjmm47ctw8vs4cms0.data.Kinds
 import app.rork.un30xjmm47ctw8vs4cms0.data.Payment
 import app.rork.un30xjmm47ctw8vs4cms0.data.Product
@@ -29,8 +34,12 @@ data class CustomerBalance(
     val fiadoCents: Long,
     val paidCents: Long,
     val lastActivity: Long,
+    /** Date of the oldest fiado still unpaid. */
+    val debtSince: Long? = null,
 ) {
     val owedCents: Long get() = (fiadoCents - paidCents).coerceAtLeast(0)
+    val daysOwed: Int get() = if (owedCents > 0 && debtSince != null) daysSince(debtSince) else 0
+    val overdue: Boolean get() = owedCents > 0 && daysOwed > OVERDUE_DAYS
 }
 
 data class ActivityItem(
@@ -52,7 +61,12 @@ data class Ledger(
     val fiadoOutstandingCents: Long = 0,
     val balances: List<CustomerBalance> = emptyList(),
     val activity: List<ActivityItem> = emptyList(),
-)
+    val overdue: List<CustomerBalance> = emptyList(),
+    val todayClosing: Closing? = null,
+    val stock: Map<String, StockInfo> = emptyMap(),
+) {
+    val overdueCents: Long get() = overdue.sumOf { it.owedCents }
+}
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     val repo = Repository.get(application).also { it.start() }
@@ -91,7 +105,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val b0 = base(p.customerId, p.customerName)
             map[p.customerId] = b0.copy(paidCents = b0.paidCents + p.amountCents, lastActivity = maxOf(b0.lastActivity, p.createdAt))
         }
-        val balances = map.values.sortedWith(compareByDescending<CustomerBalance> { it.owedCents > 0 }.thenByDescending { it.lastActivity })
+        val fiadosByCustomer = sales.filter { it.isFiado && it.customerId != null }.groupBy { it.customerId!! }
+        val balances = map.values
+            .map { it.copy(debtSince = oldestUnpaidSince(fiadosByCustomer[it.customerId].orEmpty(), it.paidCents)) }
+            .sortedWith(
+                compareByDescending<CustomerBalance> { it.overdue }
+                    .thenByDescending { if (it.overdue) it.daysOwed else 0 }
+                    .thenByDescending { it.owedCents > 0 }
+                    .thenByDescending { it.lastActivity }
+            )
 
         val me = s?.username
         val activity = buildList {
@@ -107,6 +129,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             fiadoOutstandingCents = balances.sumOf { it.owedCents },
             balances = balances,
             activity = activity,
+            overdue = balances.filter { it.overdue },
+            todayClosing = d.closings.find { it.id == dayKey(today) },
+            stock = stockInfo(d),
         )
     }
 
@@ -246,13 +271,94 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun voidSale(sale: Sale) = repo.saveSale(sale.copy(voided = true))
     fun voidPayment(payment: Payment) = repo.savePayment(payment.copy(voided = true))
 
-    fun saveProduct(id: String?, name: String, priceCents: Long, costCents: Long?) {
+    /** [newStock] = units on hand right now (recount); null keeps the previous count. */
+    fun saveProduct(id: String?, name: String, priceCents: Long, costCents: Long?, barcode: String?, newStock: Int?) {
         val existing = id?.let { pid -> data.value.products.find { it.id == pid } }
-        repo.saveProduct(
-            existing?.copy(name = name.trim(), priceCents = priceCents, costCents = costCents)
-                ?: Product(repo.newId(), name.trim(), priceCents, System.currentTimeMillis(), costCents)
+        val now = System.currentTimeMillis()
+        val code = barcode?.trim()?.ifBlank { null }
+        var p = existing?.copy(name = name.trim(), priceCents = priceCents, costCents = costCents, barcode = code)
+            ?: Product(repo.newId(), name.trim(), priceCents, now, costCents, barcode = code)
+        if (newStock != null) p = p.copy(stock = newStock, stockSince = now)
+        repo.saveProduct(p)
+    }
+
+    fun productByBarcode(code: String): Product? {
+        val c = code.trim()
+        return data.value.products.find { it.barcode != null && it.barcode == c }
+    }
+
+    fun setInventory(enabled: Boolean) = repo.saveInventory(InventorySetting(enabled))
+
+    // ---------- cash closing ----------
+
+    fun closeToday(countedCents: Long?, note: String) {
+        val s = session.value ?: return
+        val today = startOfToday()
+        val snap = daySnapshot(data.value, today)
+        repo.saveClosing(
+            Closing(
+                id = dayKey(today),
+                dayStart = today,
+                cashSalesCents = snap.cashSalesCents,
+                paymentsCents = snap.paymentsCents,
+                fiadoCents = snap.fiadoCents,
+                salesCount = snap.salesCount,
+                expectedCents = snap.expectedCents,
+                countedCents = countedCents,
+                note = note.trim(),
+                rate = ledger.value.effectiveRate,
+                authorUser = s.username,
+                authorName = s.displayName,
+                createdAt = System.currentTimeMillis(),
+            )
         )
     }
+
+    /** Owner only: removes the closing so the day accepts new sales again. */
+    fun reopenDay(closing: Closing) = repo.saveClosing(closing, deleted = true)
+
+    // ---------- notes ----------
+
+    fun saveNote(id: String?, title: String, body: String, pinned: Boolean): String {
+        val s = session.value
+        val now = System.currentTimeMillis()
+        val existing = id?.let { nid -> data.value.notes.find { it.id == nid } }
+        val note = existing?.copy(title = title.trim(), body = body.trimEnd(), pinned = pinned, updatedAt = now)
+            ?: Note(id ?: repo.newId(), title.trim(), body.trimEnd(), s?.displayName.orEmpty(), now, now, pinned)
+        repo.saveNote(note)
+        return note.id
+    }
+
+    fun deleteNote(note: Note) = repo.saveNote(note, deleted = true)
+
+    // ---------- quotes ----------
+
+    fun saveQuote(customerName: String, customerPhone: String, items: List<SaleItem>, note: String, validDays: Int): Quote {
+        val s = session.value
+        val q = Quote(
+            id = repo.newId(),
+            number = (data.value.quotes.maxOfOrNull { it.number } ?: 0) + 1,
+            customerName = customerName.trim(),
+            customerPhone = customerPhone.trim(),
+            items = items,
+            totalCents = items.sumOf { it.priceCents * it.qty },
+            rate = ledger.value.effectiveRate,
+            note = note.trim(),
+            validDays = validDays,
+            authorName = s?.displayName.orEmpty(),
+            createdAt = System.currentTimeMillis(),
+        )
+        repo.saveQuote(q)
+        return q
+    }
+
+    fun deleteQuote(quote: Quote) = repo.saveQuote(quote, deleted = true)
+
+    // ---------- backup ----------
+
+    fun exportBackup(): String = repo.exportBackup()
+    fun parseBackup(json: String): Backup = repo.parseBackup(json)
+    fun importBackup(backup: Backup): Int = repo.importBackup(backup)
 
     fun deleteProduct(product: Product) = repo.deleteProduct(product)
 

@@ -13,8 +13,8 @@ android {
         applicationId = "app.rork.un30xjmm47ctw8vs4cms0"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.4"
+        versionCode = 5
+        versionName = "1.5"
     }
 
     buildTypes {
@@ -67,5 +67,6 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.koin.androidx.compose)
     implementation(libs.okhttp)
+    implementation(libs.play.services.code.scanner)
     debugImplementation(libs.androidx.ui.tooling)
 }

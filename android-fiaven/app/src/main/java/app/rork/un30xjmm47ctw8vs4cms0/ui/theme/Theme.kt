@@ -27,6 +27,9 @@ object FV {
     val Muted = Color(0xFF5F6F66)
     val Hairline = Color(0xFFE2E8E4)
     val Danger = Color(0xFFB3261E)
+    /** Overdue debt (> 15 days) backgrounds. */
+    val DangerSoft = Color(0xFFF9DEDC)
+    val DangerTint = Color(0xFFFDF1F0)
 }
 
 private val LightColors = lightColorScheme(

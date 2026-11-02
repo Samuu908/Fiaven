@@ -53,6 +53,60 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.components.InitialsAvatar
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.SectionHeader
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+
+val ROLE_OPTIONS = listOf("Dueño", "Administrador", "Gerente", "Subjefe", "Encargado", "Cajero", "Empleado")
+
+@Composable
+private fun RoleBadge(label: String, owner: Boolean) {
+    Surface(shape = RoundedCornerShape(8.dp), color = if (owner) FV.GreenSoft else FV.Neutral) {
+        Text(
+            label, style = MaterialTheme.typography.labelMedium,
+            color = if (owner) FV.GreenDark else FV.Ink,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        )
+    }
+}
+
+/** Predefined job titles plus a free "Otro…" field (max 30 characters). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RolePicker(value: String, forOwner: Boolean, onChange: (String) -> Unit) {
+    val options = if (forOwner) ROLE_OPTIONS else ROLE_OPTIONS.filter { it != "Dueño" }
+    var custom by remember { mutableStateOf(value.isNotBlank() && value !in options) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            options.forEach { o ->
+                val selected = !custom && value == o
+                FilterChip(
+                    selected = selected,
+                    onClick = { custom = false; onChange(o) },
+                    label = { Text(o) },
+                    leadingIcon = if (selected) { { Icon(Icons.Filled.Check, null, Modifier.padding(0.dp)) } } else null,
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = FV.GreenSoft, selectedLabelColor = FV.GreenDark, selectedLeadingIconColor = FV.GreenDark),
+                )
+            }
+            FilterChip(
+                selected = custom,
+                onClick = { custom = true; if (value in options) onChange("") },
+                label = { Text("Otro…") },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = FV.GreenSoft, selectedLabelColor = FV.GreenDark),
+            )
+        }
+        if (custom) {
+            OutlinedTextField(
+                value, { onChange(it.take(30)) }, label = { Text("Escribe el rol") }, placeholder = { Text("Ej.: Almacenista") },
+                singleLine = true, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +119,7 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TeamMember?>(null) }
+    var editingRole by remember { mutableStateOf<TeamMember?>(null) }
 
     LaunchedEffect(reload) {
         error = null
@@ -90,12 +145,13 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
                 FvCard {
                     Text(session?.businessName.orEmpty(), style = MaterialTheme.typography.titleLarge, color = FV.Ink)
                     Text(
-                        "Conectado como ${session?.displayName} (@${session?.username}) · ${if (isOwner) "Dueño" else "Trabajador"}",
+                        "Conectado como ${session?.displayName} (@${session?.username}) · ${session?.roleLabel.orEmpty()}",
                         style = MaterialTheme.typography.bodyMedium, color = FV.Muted,
                     )
                     Spacer(Modifier.padding(4.dp))
                     Text(
-                        "Solo las personas con usuario y contraseña pueden registrar ventas en este negocio.",
+                        "Solo las personas con usuario y contraseña pueden registrar ventas en este negocio." +
+                            if (isOwner) " Toca a una persona para asignarle su rol." else "",
                         style = MaterialTheme.typography.bodySmall, color = FV.Muted,
                     )
                 }
@@ -118,12 +174,17 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
                         Column {
                             members!!.forEachIndexed { i, m ->
                                 if (i > 0) HorizontalDivider(color = FV.Hairline, modifier = Modifier.padding(start = 80.dp))
-                                ClickableRow(onClick = {}) {
+                                ClickableRow(onClick = { if (isOwner) editingRole = m }) {
                                     InitialsAvatar(m.displayName)
                                     Spacer(Modifier.width(16.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(m.displayName, style = MaterialTheme.typography.titleMedium, color = FV.Ink)
-                                        Text("@${m.username} · ${if (m.role == "owner") "Dueño" else "Trabajador"}", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                                        Text("@${m.username}", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                                        Spacer(Modifier.height(4.dp))
+                                        RoleBadge(m.roleLabel, m.role == "owner")
+                                    }
+                                    if (isOwner) {
+                                        IconButton(onClick = { editingRole = m }) { Icon(Icons.Filled.Badge, "Cambiar rol", tint = FV.Muted) }
                                     }
                                     if (isOwner && m.role != "owner") {
                                         IconButton(onClick = { removing = m }) { Icon(Icons.Filled.Delete, "Quitar acceso", tint = FV.Danger) }
@@ -150,12 +211,13 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
         var name by remember { mutableStateOf("") }
         var user by remember { mutableStateOf("") }
         var pass by remember { mutableStateOf("") }
+        var title by remember { mutableStateOf("Empleado") }
         var busy by remember { mutableStateOf(false) }
         var err by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { if (!busy) adding = false },
             containerColor = FV.Surface,
-            title = { Text("Nuevo trabajador") },
+            title = { Text("Nueva persona") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
@@ -165,6 +227,8 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
                         visualTransformation = PasswordVisualTransformation(),
                         shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
                     )
+                    Text("Rol", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                    RolePicker(title, forOwner = false) { title = it }
                     Text("Entrégale estos datos para que entre desde su teléfono.", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
                     err?.let { Text(it, color = FV.Danger, style = MaterialTheme.typography.bodySmall) }
                 }
@@ -175,7 +239,7 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
                     onClick = {
                         busy = true; err = null
                         scope.launch {
-                            try { vm.repo.addMember(name.trim(), user, pass); adding = false; reload++ }
+                            try { vm.repo.addMember(name.trim(), user, pass, title); adding = false; reload++ }
                             catch (e: Exception) { err = vm.friendly(e) }
                             busy = false
                         }
@@ -183,6 +247,41 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
                 ) { Text(if (busy) "Creando…" else "Crear acceso") }
             },
             dismissButton = { TextButton(onClick = { adding = false }) { Text("Cancelar") } },
+        )
+    }
+
+    editingRole?.let { m ->
+        var title by remember(m.username) { mutableStateOf(m.roleLabel) }
+        var busy by remember(m.username) { mutableStateOf(false) }
+        var err by remember(m.username) { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { if (!busy) editingRole = null },
+            containerColor = FV.Surface,
+            icon = { Icon(Icons.Filled.Badge, null, tint = FV.GreenDark) },
+            title = { Text("Rol de ${m.displayName}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    RolePicker(title, forOwner = m.role == "owner") { title = it }
+                    Text(
+                        if (m.role == "owner") "Sigue teniendo control total del negocio."
+                        else "El rol se muestra en el equipo. Los permisos siguen siendo los de empleado.",
+                        style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+                    )
+                    err?.let { Text(it, color = FV.Danger, style = MaterialTheme.typography.bodySmall) }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !busy && title.isNotBlank(),
+                    onClick = {
+                        busy = true; err = null
+                        vm.setMemberTitle(m.username, title,
+                            onOk = { busy = false; editingRole = null; reload++ },
+                            onError = { busy = false; err = it })
+                    },
+                ) { Text(if (busy) "Guardando…" else "Guardar") }
+            },
+            dismissButton = { TextButton(onClick = { editingRole = null }) { Text("Cancelar") } },
         )
     }
 

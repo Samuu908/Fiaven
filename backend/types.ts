@@ -54,6 +54,30 @@ export type Database = {
         }
         Relationships: []
       }
+      fv_files: {
+        Row: {
+          author: string
+          business_id: string
+          created_at: string
+          data: string
+          id: string
+        }
+        Insert: {
+          author?: string
+          business_id: string
+          created_at?: string
+          data: string
+          id: string
+        }
+        Update: {
+          author?: string
+          business_id?: string
+          created_at?: string
+          data?: string
+          id?: string
+        }
+        Relationships: []
+      }
       fv_login_fails: {
         Row: {
           count: number
@@ -182,6 +206,7 @@ export type Database = {
           role: string
           security_answer_hash: string | null
           security_question: string | null
+          title: string
           username: string
         }
         Insert: {
@@ -193,6 +218,7 @@ export type Database = {
           role: string
           security_answer_hash?: string | null
           security_question?: string | null
+          title?: string
           username: string
         }
         Update: {
@@ -204,6 +230,7 @@ export type Database = {
           role?: string
           security_answer_hash?: string | null
           security_question?: string | null
+          title?: string
           username?: string
         }
         Relationships: [
@@ -228,6 +255,11 @@ export type Database = {
       fv_credits_get: { Args: { p_token?: string }; Returns: Json }
       fv_credits_set: {
         Args: { p_credits: Json; p_token: string }
+        Returns: Json
+      }
+      fv_file_get: { Args: { p_id: string; p_token: string }; Returns: Json }
+      fv_file_put: {
+        Args: { p_data: string; p_id: string; p_token: string }
         Returns: Json
       }
       fv_identity: {
@@ -277,18 +309,33 @@ export type Database = {
         Args: { p_changes: Json; p_since: number; p_token: string }
         Returns: Json
       }
-      fv_team_add: {
-        Args: {
-          p_display_name: string
-          p_password: string
-          p_token: string
-          p_username: string
-        }
-        Returns: Json
-      }
+      fv_team_add:
+        | {
+            Args: {
+              p_display_name: string
+              p_password: string
+              p_token: string
+              p_username: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_display_name: string
+              p_password: string
+              p_title: string
+              p_token: string
+              p_username: string
+            }
+            Returns: Json
+          }
       fv_team_list: { Args: { p_token: string }; Returns: Json }
       fv_team_remove: {
         Args: { p_token: string; p_username: string }
+        Returns: Json
+      }
+      fv_team_set_title: {
+        Args: { p_title: string; p_token: string; p_username: string }
         Returns: Json
       }
       fv_verify: { Args: { p_token: string }; Returns: Json }

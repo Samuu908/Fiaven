@@ -168,8 +168,29 @@ export default {
           p_display_name: String(b.displayName ?? ""),
           p_username: String(b.username ?? ""),
           p_password: String(b.password ?? ""),
+          p_title: String(b.title ?? ""),
         }),
       );
+    }
+
+    if (path === "/team/title" && request.method === "POST") {
+      const b = await json(request);
+      return reply(
+        await rpc(env, "fv_team_set_title", {
+          p_token: token,
+          p_username: String(b.username ?? ""),
+          p_title: String(b.title ?? ""),
+        }),
+      );
+    }
+
+    if (path === "/attachment" && request.method === "POST") {
+      const b = await json(request);
+      return reply(await rpc(env, "fv_file_put", { p_token: token, p_id: String(b.id ?? ""), p_data: String(b.data ?? "") }));
+    }
+
+    if (path.startsWith("/attachment/") && request.method === "GET") {
+      return reply(await rpc(env, "fv_file_get", { p_token: token, p_id: decodeURIComponent(path.slice(12)) }));
     }
 
     if (path === "/team/remove" && request.method === "POST") {

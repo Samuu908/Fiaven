@@ -40,6 +40,49 @@ fun encodePhoto(context: Context, uri: Uri): String {
     return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
 }
 
+private const val DOC_MAX_SIDE = 1600
+private const val DOC_MAX_BYTES = 900_000
+
+/**
+ * Reads an invoice photo or a transfer screenshot keeping the whole image (no crop),
+ * scales its long side to 1600px and returns a JPEG small enough to upload (< ~900 KB) but still readable.
+ */
+fun encodeDocument(context: Context, uri: Uri): ByteArray {
+    val source: Bitmap = if (Build.VERSION.SDK_INT >= 28) {
+        ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val longSide = maxOf(info.size.width, info.size.height)
+            if (longSide > DOC_MAX_SIDE) {
+                val f = longSide.toFloat() / DOC_MAX_SIDE
+                decoder.setTargetSize((info.size.width / f).toInt().coerceAtLeast(1), (info.size.height / f).toInt().coerceAtLeast(1))
+            }
+        }
+    } else {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= DOC_MAX_SIDE) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+            ?: error("No se pudo leer la imagen")
+    }
+    var bmp = source
+    val long = maxOf(bmp.width, bmp.height)
+    if (long > DOC_MAX_SIDE) {
+        val f = DOC_MAX_SIDE.toFloat() / long
+        bmp = Bitmap.createScaledBitmap(bmp, (bmp.width * f).toInt().coerceAtLeast(1), (bmp.height * f).toInt().coerceAtLeast(1), true)
+    }
+    var quality = 82
+    while (true) {
+        val out = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.JPEG, quality, out)
+        val bytes = out.toByteArray()
+        if (bytes.size <= DOC_MAX_BYTES) return bytes
+        if (quality > 50) quality -= 10
+        else bmp = Bitmap.createScaledBitmap(bmp, (bmp.width * 0.8f).toInt().coerceAtLeast(1), (bmp.height * 0.8f).toInt().coerceAtLeast(1), true)
+    }
+}
+
 fun decodePhoto(data: String): Bitmap? = runCatching {
     val bytes = Base64.decode(data, Base64.DEFAULT)
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)

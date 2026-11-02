@@ -170,7 +170,7 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Rol", style = MaterialTheme.typography.labelMedium, color = FV.Muted)
-                        Text(if (s.isOwner) "Dueño" else "Trabajador", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                        Text(s.roleLabel, style = MaterialTheme.typography.titleSmall, color = FV.Ink)
                     }
                 }
             }

@@ -24,6 +24,9 @@ import app.rork.un30xjmm47ctw8vs4cms0.data.SaleItem
 import app.rork.un30xjmm47ctw8vs4cms0.data.SecurityInfo
 import app.rork.un30xjmm47ctw8vs4cms0.data.Credits
 import app.rork.un30xjmm47ctw8vs4cms0.data.Session
+import app.rork.un30xjmm47ctw8vs4cms0.data.Supplier
+import app.rork.un30xjmm47ctw8vs4cms0.data.Purchase
+import app.rork.un30xjmm47ctw8vs4cms0.data.SupplierPayment
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -72,6 +75,19 @@ data class Ledger(
     val overdueCents: Long get() = overdue.sumOf { it.owedCents }
 }
 
+data class SupplierBalance(
+    val supplierId: String,
+    val name: String,
+    val phone: String,
+    val rif: String,
+    val purchasedCents: Long,
+    val paidCents: Long,
+    val lastActivity: Long,
+) {
+    val owedCents: Long get() = (purchasedCents - paidCents).coerceAtLeast(0)
+    val creditCents: Long get() = (paidCents - purchasedCents).coerceAtLeast(0)
+}
+
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Sale in progress; survives closing the sheet by accident. */
     val saleDraft = app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SaleDraft()
@@ -86,6 +102,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val ledger: StateFlow<Ledger> = combine(repo.data, repo.bcv, repo.session) { d, b, s ->
         buildLedger(d, b, s)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Ledger())
+
+    val supplierBalances: StateFlow<List<SupplierBalance>> = kotlinx.coroutines.flow.flow {
+        repo.data.collect { emit(buildSupplierBalances(it)) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val pendingAttachments = repo.pendingAttachments
+
+    private fun buildSupplierBalances(d: AppData): List<SupplierBalance> {
+        val purchases = d.purchases.filter { !it.voided }.groupBy { it.supplierId }
+        val pays = d.supplierPayments.filter { !it.voided }.groupBy { it.supplierId }
+        return d.suppliers.map { s ->
+            val pu = purchases[s.id].orEmpty()
+            val pa = pays[s.id].orEmpty()
+            SupplierBalance(
+                s.id, s.name, s.phone, s.rif,
+                pu.sumOf { it.amountCents }, pa.sumOf { it.amountCents },
+                maxOf(s.createdAt, pu.maxOfOrNull { it.createdAt } ?: 0, pa.maxOfOrNull { it.createdAt } ?: 0),
+            )
+        }.sortedWith(compareByDescending<SupplierBalance> { it.owedCents > 0 }.thenByDescending { it.owedCents }.thenByDescending { it.lastActivity })
+    }
 
     private fun buildLedger(d: AppData, b: BcvState, s: Session?): Ledger {
         val useBcv = d.rate.mode == "bcv" || d.rate.customRate <= 0.0
@@ -321,6 +357,72 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val s = session.value ?: return
         if (!s.isOwner) return
         repo.savePhoto(BusinessPhoto("", System.currentTimeMillis(), s.displayName), deleted = true)
+    }
+
+    // ---------- suppliers ----------
+
+    fun saveSupplier(id: String?, name: String, phone: String, rif: String, note: String): String {
+        val existing = id?.let { sid -> data.value.suppliers.find { it.id == sid } }
+        val s = existing?.copy(name = name.trim(), phone = phone.trim(), rif = rif.trim().uppercase(), note = note.trim())
+            ?: Supplier(repo.newId(), name.trim(), phone.trim(), rif.trim().uppercase(), note.trim(), System.currentTimeMillis())
+        repo.saveSupplier(s)
+        return s.id
+    }
+
+    fun deleteSupplier(id: String) {
+        val s = data.value.suppliers.find { it.id == id } ?: return
+        repo.saveSupplier(s, deleted = true)
+    }
+
+    fun addPurchase(
+        supplier: SupplierBalance, cents: Long, currency: String, original: Double,
+        invoiceNumber: String, note: String, attachments: List<String>, createdAt: Long,
+    ) {
+        val s = session.value ?: return
+        repo.savePurchase(
+            Purchase(
+                id = repo.newId(), supplierId = supplier.supplierId, supplierName = supplier.name,
+                amountCents = cents, currency = currency, originalAmount = original, rate = ledger.value.effectiveRate,
+                invoiceNumber = invoiceNumber.trim(), note = note.trim(), attachments = attachments,
+                authorUser = s.username, authorName = s.displayName, createdAt = createdAt,
+            )
+        )
+    }
+
+    fun addSupplierPayment(
+        supplier: SupplierBalance, cents: Long, currency: String, original: Double,
+        method: String, reference: String, note: String, attachments: List<String>, createdAt: Long,
+    ) {
+        val s = session.value ?: return
+        repo.saveSupplierPayment(
+            SupplierPayment(
+                id = repo.newId(), supplierId = supplier.supplierId, supplierName = supplier.name,
+                amountCents = cents, currency = currency, originalAmount = original, rate = ledger.value.effectiveRate,
+                method = method, reference = reference.trim(), note = note.trim(), attachments = attachments,
+                authorUser = s.username, authorName = s.displayName, createdAt = createdAt,
+            )
+        )
+    }
+
+    fun voidPurchase(p: Purchase) = repo.savePurchase(p.copy(voided = true))
+    fun voidSupplierPayment(p: SupplierPayment) = repo.saveSupplierPayment(p.copy(voided = true))
+
+    /** Compresses the picked image, keeps it on this phone and queues the upload. */
+    fun addAttachment(uri: android.net.Uri, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            val id = withContext(Dispatchers.IO) {
+                runCatching { repo.addAttachment(encodeDocument(getApplication(), uri)) }.getOrNull()
+            }
+            onDone(id)
+        }
+    }
+
+    suspend fun loadAttachment(id: String): java.io.File? = repo.loadAttachment(id)
+
+    // ---------- team roles ----------
+
+    fun setMemberTitle(username: String, title: String, onOk: () -> Unit, onError: (String) -> Unit) = viewModelScope.launch {
+        try { repo.setMemberTitle(username, title); onOk() } catch (e: Exception) { onError(friendly(e)) }
     }
 
     // ---------- cash closing ----------

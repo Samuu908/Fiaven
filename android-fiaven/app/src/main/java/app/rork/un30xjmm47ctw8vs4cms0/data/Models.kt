@@ -11,7 +11,62 @@ object Kinds {
     const val NOTE = "note"
     const val CLOSING = "closing"
     const val QUOTE = "quote"
+    const val SUPPLIER = "supplier"
+    const val PURCHASE = "purchase"
+    const val SUPPLIER_PAYMENT = "spayment"
 }
+
+/** Someone the business buys from. */
+@Serializable
+data class Supplier(
+    val id: String,
+    val name: String,
+    val phone: String = "",
+    /** RIF stored as "J-12345678-9" (free text). */
+    val rif: String = "",
+    val note: String = "",
+    val createdAt: Long,
+)
+
+/** A purchase invoice or debt owed to a supplier. Amount always in USD cents. */
+@Serializable
+data class Purchase(
+    val id: String,
+    val supplierId: String,
+    val supplierName: String,
+    val amountCents: Long,
+    val currency: String = "USD", // "USD" | "BS"
+    val originalAmount: Double = 0.0,
+    val rate: Double = 0.0,
+    val invoiceNumber: String = "",
+    val note: String = "",
+    /** Ids of photos (invoice) stored on the server. */
+    val attachments: List<String> = emptyList(),
+    val authorUser: String,
+    val authorName: String,
+    val createdAt: Long,
+    val voided: Boolean = false,
+)
+
+/** A payment (abono) made to a supplier, with optional proof (transfer screenshot, receipt). */
+@Serializable
+data class SupplierPayment(
+    val id: String,
+    val supplierId: String,
+    val supplierName: String,
+    val amountCents: Long,
+    val currency: String = "USD",
+    val originalAmount: Double = 0.0,
+    val rate: Double = 0.0,
+    val method: String = "", // Efectivo, Transferencia, Pago móvil, Zelle, Otro
+    val reference: String = "",
+    val note: String = "",
+    val attachments: List<String> = emptyList(),
+    val authorUser: String,
+    val authorName: String,
+    val createdAt: Long,
+    val voided: Boolean = false,
+)
 
 @Serializable
 data class Product(
@@ -84,6 +139,7 @@ data class BusinessPhoto(val data: String = "", val updatedAt: Long = 0, val aut
 
 val BACKUP_KINDS = setOf(
     Kinds.PRODUCT, Kinds.CUSTOMER, Kinds.SALE, Kinds.PAYMENT, Kinds.SETTING, Kinds.NOTE, Kinds.CLOSING, Kinds.QUOTE,
+    Kinds.SUPPLIER, Kinds.PURCHASE, Kinds.SUPPLIER_PAYMENT,
 )
 
 @Serializable
@@ -160,7 +216,7 @@ data class RateSetting(
 )
 
 @Serializable
-data class SessionUser(val username: String, val displayName: String, val role: String)
+data class SessionUser(val username: String, val displayName: String, val role: String, val title: String = "")
 
 @Serializable
 data class SessionBusiness(val id: String, val name: String)
@@ -169,7 +225,13 @@ data class SessionBusiness(val id: String, val name: String)
 data class AuthResponse(val token: String, val user: SessionUser, val business: SessionBusiness)
 
 @Serializable
-data class TeamMember(val username: String, val displayName: String, val role: String)
+data class TeamMember(val username: String, val displayName: String, val role: String, val title: String = "") {
+    val roleLabel: String get() = title.ifBlank { if (role == "owner") "Dueño" else "Empleado" }
+}
+
+/** Response of GET /me. */
+@Serializable
+data class MeResponse(val username: String = "", val displayName: String = "", val role: String = "", val title: String = "")
 
 @Serializable
 data class TeamResponse(val users: List<TeamMember>)
@@ -236,8 +298,11 @@ data class Session(
     val role: String,
     val businessId: String,
     val businessName: String,
+    /** Visible job title (Administrador, Gerente…); permissions still come from [role]. */
+    val title: String = "",
 ) {
     val isOwner: Boolean get() = role == "owner"
+    val roleLabel: String get() = title.ifBlank { if (isOwner) "Dueño" else "Empleado" }
 }
 
 /** A local row plus its sync flag. */

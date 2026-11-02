@@ -102,6 +102,9 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.NoteEditorScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.NotesScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.QuoteBuilderScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.QuotesScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SupplierDetailScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SuppliersScreen
+import androidx.compose.material.icons.filled.LocalShipping
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
@@ -182,6 +185,11 @@ private fun MainShell(vm: AppViewModel) {
                                     text = { Text("Cierre de caja") },
                                     leadingIcon = { Icon(Icons.Filled.Lock, null) },
                                     onClick = { menu = false; nav.navigate("cierre") },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Proveedores") },
+                                    leadingIcon = { Icon(Icons.Filled.LocalShipping, null) },
+                                    onClick = { menu = false; nav.navigate("proveedores") },
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Presupuestos") },
@@ -338,6 +346,12 @@ private fun MainShell(vm: AppViewModel) {
             }
             composable("presupuestos") {
                 QuotesScreen(vm, onBack = { nav.popBackStack() }, onNew = { nav.navigate("presupuesto/nuevo") })
+            }
+            composable("proveedores") {
+                SuppliersScreen(vm, onBack = { nav.popBackStack() }, onOpen = { nav.navigate("proveedor/$it") })
+            }
+            composable("proveedor/{id}") { backStack ->
+                SupplierDetailScreen(vm, supplierId = backStack.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
             }
             composable("presupuesto/nuevo") { QuoteBuilderScreen(vm, onBack = { nav.popBackStack() }) }
             composable("acerca") {

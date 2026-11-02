@@ -27,7 +27,8 @@ class Api {
 
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .pingInterval(25, TimeUnit.SECONDS)
         .build()
 
@@ -125,19 +126,24 @@ class Api {
     suspend fun team(token: String): List<TeamMember> =
         AppJson.decodeFromString<TeamResponse>(get("/team", token)).users
 
-    suspend fun addMember(token: String, displayName: String, username: String, password: String) {
-        val body = AppJson.encodeToString(
-            JsonObject.serializer(),
-            JsonObject(
-                mapOf(
-                    "displayName" to kotlinx.serialization.json.JsonPrimitive(displayName),
-                    "username" to kotlinx.serialization.json.JsonPrimitive(username),
-                    "password" to kotlinx.serialization.json.JsonPrimitive(password),
-                )
-            )
-        )
-        post("/team/add", body, token)
+    suspend fun addMember(token: String, displayName: String, username: String, password: String, title: String = "") {
+        post("/team/add", body("displayName" to displayName, "username" to username, "password" to password, "title" to title), token)
     }
+
+    suspend fun setTitle(token: String, username: String, title: String) {
+        post("/team/title", body("username" to username, "title" to title), token)
+    }
+
+    suspend fun me(token: String): MeResponse = AppJson.decodeFromString(get("/me", token))
+
+    /** Uploads a JPEG (base64) once; the server never overwrites an existing id. */
+    suspend fun uploadAttachment(token: String, id: String, base64: String) {
+        post("/attachment", body("id" to id, "data" to base64), token)
+    }
+
+    suspend fun downloadAttachment(token: String, id: String): String =
+        AppJson.parseToJsonElement(get("/attachment/$id", token)).jsonObject["data"]?.jsonPrimitive?.content
+            ?: throw IOException("Sin datos")
 
     suspend fun removeMember(token: String, username: String) {
         val body = AppJson.encodeToString(

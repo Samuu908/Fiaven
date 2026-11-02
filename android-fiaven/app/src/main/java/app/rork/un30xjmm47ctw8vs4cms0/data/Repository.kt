@@ -34,6 +34,9 @@ data class AppData(
     val quotes: List<Quote> = emptyList(),
     val inventory: InventorySetting = InventorySetting(),
     val photo: BusinessPhoto? = null,
+    val suppliers: List<Supplier> = emptyList(),
+    val purchases: List<Purchase> = emptyList(),
+    val supplierPayments: List<SupplierPayment> = emptyList(),
     val dirtyKeys: Set<String> = emptySet(),
     val loaded: Boolean = false,
 )
@@ -99,9 +102,11 @@ class Repository private constructor(private val appContext: Context) {
     private fun startSessionWork() {
         connectSocket()
         loopJob?.cancel()
+        scope.launch { refreshMe() }
         loopJob = scope.launch {
             while (isActive) {
                 syncNow()
+                uploadPendingAttachments()
                 delay(if (_sync.value.pending > 0) 10_000 else 45_000)
             }
         }
@@ -146,7 +151,21 @@ class Repository private constructor(private val appContext: Context) {
             role = prefs.getString("role", "worker").orEmpty(),
             businessId = prefs.getString("business_id", "").orEmpty(),
             businessName = prefs.getString("business_name", "").orEmpty(),
+            title = prefs.getString("title", "").orEmpty(),
         )
+    }
+
+    /** Pulls the latest name, role and title of this user (the owner may have changed them). */
+    suspend fun refreshMe() {
+        val token = _session.value?.token ?: return
+        val me = runCatching { api.me(token) }.getOrNull() ?: return
+        if (me.username.isBlank() || _session.value?.token != token) return
+        prefs.edit()
+            .putString("display_name", me.displayName)
+            .putString("role", me.role.ifBlank { "worker" })
+            .putString("title", me.title)
+            .apply()
+        _session.value = loadSession()
     }
 
     private fun saveSession(auth: AuthResponse) {
@@ -157,6 +176,7 @@ class Repository private constructor(private val appContext: Context) {
             .putString("username", auth.user.username)
             .putString("display_name", auth.user.displayName)
             .putString("role", auth.user.role)
+            .putString("title", auth.user.title)
             .putString("business_id", auth.business.id)
             .putString("business_name", auth.business.name)
             .apply()
@@ -196,7 +216,7 @@ class Repository private constructor(private val appContext: Context) {
         api.deleteAccount(requireToken(), password)
         stopSessionWork()
         db.clearAll()
-        prefs.edit().remove("token").remove("username").remove("display_name").remove("role")
+        prefs.edit().remove("token").remove("username").remove("display_name").remove("role").remove("title")
             .remove("business_id").remove("business_name").apply()
         _session.value = null
         reload()
@@ -229,7 +249,7 @@ class Repository private constructor(private val appContext: Context) {
     fun logout() {
         val token = _session.value?.token
         stopSessionWork()
-        prefs.edit().remove("token").remove("username").remove("display_name").remove("role")
+        prefs.edit().remove("token").remove("username").remove("display_name").remove("role").remove("title")
             .remove("business_name").apply()
         _session.value = null
         if (token != null) scope.launch { api.logout(token) }
@@ -244,8 +264,12 @@ class Repository private constructor(private val appContext: Context) {
     // ---------- team ----------
 
     suspend fun team(): List<TeamMember> = api.team(requireToken())
-    suspend fun addMember(displayName: String, username: String, password: String) =
-        api.addMember(requireToken(), displayName.trim(), username.trim(), password)
+    suspend fun addMember(displayName: String, username: String, password: String, title: String = "") =
+        api.addMember(requireToken(), displayName.trim(), username.trim(), password, title.trim())
+    suspend fun setMemberTitle(username: String, title: String) {
+        api.setTitle(requireToken(), username, title.trim())
+        if (username == _session.value?.username) refreshMe()
+    }
     suspend fun removeMember(username: String) = api.removeMember(requireToken(), username)
 
     private fun requireToken(): String = _session.value?.token ?: throw ApiException("Sin sesión", 401)
@@ -265,6 +289,9 @@ class Repository private constructor(private val appContext: Context) {
         val notes = ArrayList<Note>()
         val closings = ArrayList<Closing>()
         val quotes = ArrayList<Quote>()
+        val suppliers = ArrayList<Supplier>()
+        val purchases = ArrayList<Purchase>()
+        val supplierPayments = ArrayList<SupplierPayment>()
         val dirty = HashSet<String>()
         for (row in rows) {
             if (row.dirty) dirty += "${row.kind}:${row.id}"
@@ -283,6 +310,9 @@ class Repository private constructor(private val appContext: Context) {
                     Kinds.NOTE -> notes += AppJson.decodeFromString<Note>(row.data)
                     Kinds.CLOSING -> closings += AppJson.decodeFromString<Closing>(row.data)
                     Kinds.QUOTE -> quotes += AppJson.decodeFromString<Quote>(row.data)
+                    Kinds.SUPPLIER -> suppliers += AppJson.decodeFromString<Supplier>(row.data)
+                    Kinds.PURCHASE -> purchases += AppJson.decodeFromString<Purchase>(row.data)
+                    Kinds.SUPPLIER_PAYMENT -> supplierPayments += AppJson.decodeFromString<SupplierPayment>(row.data)
                 }
             }
         }
@@ -297,6 +327,9 @@ class Repository private constructor(private val appContext: Context) {
             quotes = quotes.sortedByDescending { it.createdAt },
             inventory = inventory,
             photo = photo,
+            suppliers = suppliers.sortedBy { it.name.lowercase() },
+            purchases = purchases.sortedByDescending { it.createdAt },
+            supplierPayments = supplierPayments.sortedByDescending { it.createdAt },
             dirtyKeys = dirty,
             loaded = true,
         )
@@ -342,6 +375,69 @@ class Repository private constructor(private val appContext: Context) {
 
     fun saveQuote(quote: Quote, deleted: Boolean = false) =
         writeLocal(Kinds.QUOTE, quote.id, AppJson.encodeToString(Quote.serializer(), quote), deleted)
+
+    fun saveSupplier(supplier: Supplier, deleted: Boolean = false) =
+        writeLocal(Kinds.SUPPLIER, supplier.id, AppJson.encodeToString(Supplier.serializer(), supplier), deleted)
+
+    fun savePurchase(purchase: Purchase) =
+        writeLocal(Kinds.PURCHASE, purchase.id, AppJson.encodeToString(Purchase.serializer(), purchase))
+
+    fun saveSupplierPayment(payment: SupplierPayment) =
+        writeLocal(Kinds.SUPPLIER_PAYMENT, payment.id, AppJson.encodeToString(SupplierPayment.serializer(), payment))
+
+    // ---------- attachments (invoice photos, transfer screenshots) ----------
+
+    private val attachmentDir: java.io.File get() = java.io.File(appContext.filesDir, "attachments").apply { mkdirs() }
+    private val attMutex = Mutex()
+    private val _pendingAttachments = MutableStateFlow(prefs.getStringSet("att_pending", emptySet()).orEmpty().toSet())
+    val pendingAttachments: StateFlow<Set<String>> = _pendingAttachments.asStateFlow()
+
+    fun attachmentFile(id: String): java.io.File = java.io.File(attachmentDir, "$id.jpg")
+
+    /** Saves the JPEG on this phone right away and queues it for upload. Returns its id. */
+    fun addAttachment(jpeg: ByteArray): String {
+        val id = newId()
+        attachmentFile(id).writeBytes(jpeg)
+        _pendingAttachments.update { it + id }
+        prefs.edit().putStringSet("att_pending", _pendingAttachments.value).apply()
+        scope.launch { uploadPendingAttachments() }
+        return id
+    }
+
+    suspend fun uploadPendingAttachments() {
+        val token = _session.value?.token ?: return
+        attMutex.withLock {
+            for (id in _pendingAttachments.value) {
+                val file = attachmentFile(id)
+                try {
+                    if (file.exists()) {
+                        val b64 = android.util.Base64.encodeToString(file.readBytes(), android.util.Base64.NO_WRAP)
+                        api.uploadAttachment(token, id, b64)
+                    }
+                    _pendingAttachments.update { it - id }
+                    prefs.edit().putStringSet("att_pending", _pendingAttachments.value).apply()
+                } catch (e: ApiException) {
+                    if (e.status == 401) return
+                    if (e.status in 400..499) { // never accepted: drop it from the queue but keep the local copy
+                        _pendingAttachments.update { it - id }
+                        prefs.edit().putStringSet("att_pending", _pendingAttachments.value).apply()
+                    } else return
+                } catch (e: Exception) {
+                    return
+                }
+            }
+        }
+    }
+
+    /** Local copy if present, otherwise downloads it from the server and caches it. */
+    suspend fun loadAttachment(id: String): java.io.File? = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val file = attachmentFile(id)
+        if (file.exists() && file.length() > 0) return@withContext file
+        val token = _session.value?.token ?: return@withContext null
+        val b64 = runCatching { api.downloadAttachment(token, id) }.getOrNull() ?: return@withContext null
+        runCatching { file.writeBytes(android.util.Base64.decode(b64, android.util.Base64.DEFAULT)) }.getOrNull() ?: return@withContext null
+        file
+    }
 
     // ---------- backup ----------
 

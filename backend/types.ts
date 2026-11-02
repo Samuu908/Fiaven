@@ -272,6 +272,10 @@ export type Database = {
           username: string
         }[]
       }
+      fv_is_void_only: {
+        Args: { p_deleted: boolean; p_new: string; p_old: string }
+        Returns: boolean
+      }
       fv_login: {
         Args: { p_password: string; p_username: string }
         Returns: Json

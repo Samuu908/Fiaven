@@ -245,7 +245,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
         val payment = if (key.startsWith("p:")) data.payments.find { it.id == key.drop(2) } else null
         ActivityDetailDialog(
             sale = sale, payment = payment, rate = ledger.effectiveRate,
-            canVoid = isOwner && (sale?.voided == false || payment?.voided == false),
+            canVoid = sale?.voided == false || payment?.voided == false,
             onVoid = {
                 sale?.let { vm.voidSale(it) }
                 payment?.let { vm.voidPayment(it) }

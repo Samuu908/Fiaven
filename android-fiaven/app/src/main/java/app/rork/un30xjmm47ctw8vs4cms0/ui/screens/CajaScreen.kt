@@ -289,12 +289,11 @@ fun CajaScreen(
     }
 
     selected?.let { item ->
-        val session = vm.session.value
         val sale = if (!item.isPayment) data.sales.find { "s:${it.id}" == item.key } else null
         val payment = if (item.isPayment) data.payments.find { "p:${it.id}" == item.key } else null
         ActivityDetailDialog(
             sale = sale, payment = payment, rate = ledger.effectiveRate,
-            canVoid = session?.isOwner == true,
+            canVoid = sale?.voided == false || payment?.voided == false,
             onVoid = {
                 sale?.let { vm.voidSale(it) }; payment?.let { vm.voidPayment(it) }; selected = null
             },

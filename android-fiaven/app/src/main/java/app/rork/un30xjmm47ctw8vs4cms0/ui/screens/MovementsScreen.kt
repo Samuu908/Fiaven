@@ -308,7 +308,7 @@ fun MovementsScreen(vm: AppViewModel, onBack: () -> Unit, onOpenCustomer: (Strin
         val payment = if (item.isPayment) data.payments.find { "p:${it.id}" == item.key } else null
         ActivityDetailDialog(
             sale = sale, payment = payment, rate = ledger.effectiveRate,
-            canVoid = session?.isOwner == true,
+            canVoid = sale?.voided == false || payment?.voided == false,
             onVoid = { sale?.let { vm.voidSale(it) }; payment?.let { vm.voidPayment(it) }; selected = null },
             onOpenCustomer = (sale?.customerId ?: payment?.customerId)?.let { id -> { selected = null; onOpenCustomer(id) } },
             onDismiss = { selected = null },

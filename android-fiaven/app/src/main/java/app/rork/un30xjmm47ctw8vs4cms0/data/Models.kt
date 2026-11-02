@@ -65,6 +65,7 @@ data class Quote(
     val number: Int,
     val customerName: String,
     val customerPhone: String = "",
+    val customerCedula: String = "",
     val items: List<SaleItem>,
     val totalCents: Long,
     val rate: Double,
@@ -105,6 +106,8 @@ data class Customer(
     val name: String,
     val phone: String = "",
     val createdAt: Long,
+    /** Cédula or RIF, stored as "V-12345678". */
+    val cedula: String = "",
 )
 
 @Serializable

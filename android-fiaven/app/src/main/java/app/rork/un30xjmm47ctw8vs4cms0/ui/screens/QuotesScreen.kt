@@ -27,6 +27,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Badge
+import app.rork.un30xjmm47ctw8vs4cms0.ui.cedulaDigits
+import app.rork.un30xjmm47ctw8vs4cms0.ui.matchesQuery
+import app.rork.un30xjmm47ctw8vs4cms0.ui.prettyCedula
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -242,6 +246,7 @@ fun QuoteBuilderScreen(vm: AppViewModel, onBack: () -> Unit) {
 
     var customer by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
+    var cedula by remember { mutableStateOf("") }
     var picked by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
@@ -289,7 +294,7 @@ fun QuoteBuilderScreen(vm: AppViewModel, onBack: () -> Unit) {
                     Spacer(Modifier.height(10.dp))
                     Button(
                         onClick = {
-                            val q = vm.saveQuote(customer, phone, lines.map { SaleItem(it.productId, it.name, it.priceCents, it.qty) }, note, validDays)
+                            val q = vm.saveQuote(customer, phone, lines.map { SaleItem(it.productId, it.name, it.priceCents, it.qty) }, note, validDays, cedula)
                             sendQuote(context, q, session?.businessName.orEmpty())
                             onBack()
                         },
@@ -326,18 +331,42 @@ fun QuoteBuilderScreen(vm: AppViewModel, onBack: () -> Unit) {
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                         shape = RoundedCornerShape(16.dp), colors = fieldColors(), modifier = Modifier.fillMaxWidth(),
                     )
-                    val suggestions = remember(customer, data.customers, picked) {
-                        val q = customer.trim().lowercase()
-                        if (q.isEmpty() || picked) emptyList()
-                        else data.customers.filter { it.name.lowercase().contains(q) && !it.name.equals(customer.trim(), true) }.take(5)
+                    val suggestions = remember(customer, cedula, data.customers, picked) {
+                        val byCed = cedulaDigits(cedula)
+                        when {
+                            picked -> emptyList()
+                            byCed.length >= 3 -> data.customers.filter { cedulaDigits(it.cedula).contains(byCed) }.take(5)
+                            customer.isNotBlank() -> data.customers.filter { it.matchesQuery(customer) && !it.name.equals(customer.trim(), true) }.take(5)
+                            else -> emptyList()
+                        }
                     }
                     if (suggestions.isNotEmpty()) {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
                             items(suggestions, key = { it.id }) { c ->
-                                SuggestionChip(onClick = { customer = c.name; phone = c.phone; picked = true }, label = { Text(c.name) })
+                                SuggestionChip(
+                                    onClick = {
+                                        customer = c.name; phone = c.phone; picked = true
+                                        if (c.cedula.isNotBlank()) cedula = prettyCedula(c.cedula)
+                                    },
+                                    label = { Text(if (c.cedula.isBlank()) c.name else "${c.name} · ${prettyCedula(c.cedula)}") },
+                                )
                             }
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        cedula,
+                        { v ->
+                            cedula = v.take(16)
+                            val d = cedulaDigits(v)
+                            val hit = if (d.length >= 6) data.customers.firstOrNull { cedulaDigits(it.cedula) == d } else null
+                            if (hit != null) { customer = hit.name; phone = hit.phone; picked = true }
+                        },
+                        placeholder = { Text("Cédula o RIF (opcional)") },
+                        leadingIcon = { Icon(Icons.Filled.Badge, null) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+                        shape = RoundedCornerShape(16.dp), colors = fieldColors(), modifier = Modifier.fillMaxWidth(),
+                    )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         phone, { phone = it },

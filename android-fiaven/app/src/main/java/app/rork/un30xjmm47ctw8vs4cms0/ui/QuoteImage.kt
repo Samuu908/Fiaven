@@ -98,7 +98,11 @@ fun renderQuote(quote: Quote, businessName: String): Bitmap {
     c.drawText(ellipsize(quote.customerName.ifBlank { "Cliente" }, value, contentW / 2 - 20f), M, y, value)
     c.drawText(shortDate(quote.createdAt), col2, y, value)
     y += 50f
-    c.drawText(quote.customerPhone.ifBlank { " " }, M, y, label)
+    val idLine = listOfNotNull(
+        prettyCedula(quote.customerCedula).ifBlank { null }?.let { "C.I./RIF: $it" },
+        quote.customerPhone.ifBlank { null },
+    ).joinToString("  ·  ")
+    c.drawText(ellipsize(idLine.ifBlank { " " }, label, contentW / 2 - 20f), M, y, label)
     c.drawText("Válido hasta ${shortDate(quote.createdAt + quote.validDays * DAY_MS)}", col2, y, label)
     y += 56f
 

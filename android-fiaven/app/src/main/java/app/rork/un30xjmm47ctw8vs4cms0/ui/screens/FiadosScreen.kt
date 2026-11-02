@@ -1,5 +1,7 @@
 package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
 
+import app.rork.un30xjmm47ctw8vs4cms0.ui.customerMatches
+import app.rork.un30xjmm47ctw8vs4cms0.ui.customerSubtitle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -59,7 +61,7 @@ fun FiadosScreen(vm: AppViewModel, onOpen: (String) -> Unit) {
         val q = query.trim().lowercase()
         ledger.balances
             .filter { if (onlyOverdue) it.overdue else showPaid || it.owedCents > 0 }
-            .filter { q.isEmpty() || it.name.lowercase().contains(q) || it.phone.contains(q) }
+            .filter { customerMatches(it.name, it.cedula, it.phone, q) }
     }
 
     LazyColumn(
@@ -102,7 +104,7 @@ fun FiadosScreen(vm: AppViewModel, onOpen: (String) -> Unit) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Buscar cliente") },
+                placeholder = { Text("Buscar por nombre o cédula") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
                 trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Limpiar") } },
                 singleLine = true,
@@ -145,7 +147,7 @@ fun FiadosScreen(vm: AppViewModel, onOpen: (String) -> Unit) {
                                 Spacer(Modifier.width(16.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(b.name, style = MaterialTheme.typography.titleMedium, color = FV.Ink)
-                                    Text(b.phone.ifBlank { "Sin teléfono" }, style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                                    Text(customerSubtitle(b.cedula, b.phone), style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
                                     Row {
                                         Text("Abonó ${usd(b.paidCents)}", style = MaterialTheme.typography.bodyMedium, color = FV.Green)
                                         Text("  ·  ", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)

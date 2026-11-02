@@ -23,6 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.CheckCircle
+import app.rork.un30xjmm47ctw8vs4cms0.ui.cedulaDigits
+import app.rork.un30xjmm47ctw8vs4cms0.ui.matchesQuery
+import app.rork.un30xjmm47ctw8vs4cms0.ui.prettyCedula
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Edit
@@ -114,6 +119,7 @@ class SaleDraft {
     var customerName by mutableStateOf("")
     var customerPhone by mutableStateOf("")
     var customerId by mutableStateOf<String?>(null)
+    var customerCedula by mutableStateOf("")
     var payCurrency by mutableStateOf("USD")
     var paid by mutableStateOf("")
     val units: Int get() = cart.sumOf { it.qty }
@@ -121,7 +127,7 @@ class SaleDraft {
 
     fun clear() {
         cart.clear(); step = 0; query = ""; fiado = false
-        customerName = ""; customerPhone = ""; customerId = null
+        customerName = ""; customerPhone = ""; customerId = null; customerCedula = ""
         payCurrency = "USD"; paid = ""
     }
 }
@@ -142,6 +148,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
     var customerName by draft::customerName
     var customerPhone by draft::customerPhone
     var customerId by draft::customerId
+    var customerCedula by draft::customerCedula
     var confirmCancel by remember { mutableStateOf(false) }
     fun cancelSale() { draft.clear(); onDismiss() }
     var showFree by remember { mutableStateOf(false) }
@@ -396,6 +403,27 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
             AnimatedVisibility(fiado) {
                 Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
+                        value = customerCedula,
+                        onValueChange = { v ->
+                            customerCedula = v.take(16); error = null
+                            // Exact cédula match fills the customer in at once.
+                            val d = cedulaDigits(v)
+                            val hit = if (d.length >= 6) data.customers.firstOrNull { cedulaDigits(it.cedula) == d } else null
+                            if (hit != null) { customerName = hit.name; customerPhone = hit.phone; customerId = hit.id }
+                            else if (customerId != null && data.customers.find { it.id == customerId }?.cedula?.let(::cedulaDigits) != d) customerId = null
+                        },
+                        placeholder = { Text("Cédula (busca al cliente)") },
+                        leadingIcon = { Icon(Icons.Filled.Badge, null) },
+                        trailingIcon = {
+                            if (customerId != null) Icon(Icons.Filled.CheckCircle, "Cliente encontrado", tint = FV.Green)
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, keyboardType = KeyboardType.Text),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = fieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
                         value = customerName,
                         onValueChange = { customerName = it; customerId = null; error = null },
                         placeholder = { Text("Cliente") },
@@ -406,17 +434,25 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                         colors = fieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    val suggestions = remember(customerName, data.customers, customerId) {
-                        val q = customerName.trim().lowercase()
-                        if (q.isEmpty() || customerId != null) emptyList()
-                        else data.customers.filter { it.name.lowercase().contains(q) && !it.name.equals(customerName.trim(), true) }.take(5)
+                    val suggestions = remember(customerName, customerCedula, data.customers, customerId) {
+                        val byName = customerName.trim()
+                        val byCed = cedulaDigits(customerCedula)
+                        when {
+                            customerId != null -> emptyList()
+                            byCed.length >= 3 -> data.customers.filter { cedulaDigits(it.cedula).contains(byCed) }.take(5)
+                            byName.isNotEmpty() -> data.customers.filter { it.matchesQuery(byName) && !it.name.equals(byName, true) }.take(5)
+                            else -> emptyList()
+                        }
                     }
                     if (suggestions.isNotEmpty()) {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(suggestions, key = { it.id }) { c ->
                                 SuggestionChip(
-                                    onClick = { customerName = c.name; customerPhone = c.phone; customerId = c.id },
-                                    label = { Text(c.name) },
+                                    onClick = {
+                                        customerName = c.name; customerPhone = c.phone; customerId = c.id
+                                        if (c.cedula.isNotBlank()) customerCedula = prettyCedula(c.cedula)
+                                    },
+                                    label = { Text(if (c.cedula.isBlank()) c.name else "${c.name} · ${prettyCedula(c.cedula)}") },
                                 )
                             }
                         }
@@ -456,7 +492,7 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean) -> 
                                 else -> {
                                     vm.saveSale(
                                         cart.map { SaleItem(it.productId, it.name, it.priceCents, it.qty, it.costCents) },
-                                        fiado, customerName, customerPhone, customerId,
+                                        fiado, customerName, customerPhone, customerId, customerCedula,
                                     )
                                     val wasFiado = fiado
                                     draft.clear()

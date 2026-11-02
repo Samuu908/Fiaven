@@ -1,5 +1,8 @@
 package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
 
+import app.rork.un30xjmm47ctw8vs4cms0.ui.customerSubtitle
+import app.rork.un30xjmm47ctw8vs4cms0.ui.prettyCedula
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -86,7 +89,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
 
     val customer = data.customers.find { it.id == customerId }
     val balance = ledger.balances.find { it.customerId == customerId }
-        ?: CustomerBalance(customerId, customer?.name ?: "Cliente", customer?.phone.orEmpty(), 0, 0, 0)
+        ?: CustomerBalance(customerId, customer?.name ?: "Cliente", customer?.phone.orEmpty(), 0, 0, 0, cedula = customer?.cedula.orEmpty())
 
     val me = session?.username
     val history = remember(data, customerId, me) {
@@ -153,7 +156,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(balance.name, style = MaterialTheme.typography.titleLarge, color = FV.Ink)
-                        Text(balance.phone.ifBlank { "Sin teléfono" }, style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                        Text(customerSubtitle(balance.cedula, balance.phone), style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
                     }
                 }
             }
@@ -260,8 +263,8 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
         }
     }
     if (showEdit) {
-        EditCustomerDialog(balance.name, balance.phone, onDismiss = { showEdit = false }) { n, p ->
-            vm.updateCustomer(customerId, n, p)
+        EditCustomerDialog(balance.name, balance.phone, balance.cedula, onDismiss = { showEdit = false }) { n, p, c ->
+            vm.updateCustomer(customerId, n, p, c)
             showEdit = false
         }
     }
@@ -320,8 +323,9 @@ private fun PaymentDialog(
 }
 
 @Composable
-private fun EditCustomerDialog(name0: String, phone0: String, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+private fun EditCustomerDialog(name0: String, phone0: String, cedula0: String, onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
     var name by remember { mutableStateOf(name0) }
+    var cedula by remember { mutableStateOf(prettyCedula(cedula0)) }
     var phone by remember { mutableStateOf(phone0) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -331,13 +335,18 @@ private fun EditCustomerDialog(name0: String, phone0: String, onDismiss: () -> U
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
+                    cedula, { cedula = it.take(16) }, label = { Text("Cédula o RIF") }, placeholder = { Text("V-12.345.678") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+                    shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
                     phone, { phone = it }, label = { Text("Teléfono") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
-        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name, phone) }) { Text("Guardar") } },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name, phone, cedula) }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }

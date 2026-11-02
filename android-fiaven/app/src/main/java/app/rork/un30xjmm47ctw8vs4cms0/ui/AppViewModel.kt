@@ -39,6 +39,7 @@ data class CustomerBalance(
     val lastActivity: Long,
     /** Date of the oldest fiado still unpaid. */
     val debtSince: Long? = null,
+    val cedula: String = "",
 ) {
     val owedCents: Long get() = (fiadoCents - paidCents).coerceAtLeast(0)
     val daysOwed: Int get() = if (owedCents > 0 && debtSince != null) daysSince(debtSince) else 0
@@ -101,7 +102,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val map = LinkedHashMap<String, CustomerBalance>()
         fun base(id: String, fallbackName: String): CustomerBalance {
             val c = customersById[id]
-            return map[id] ?: CustomerBalance(id, c?.name ?: fallbackName, c?.phone.orEmpty(), 0, 0, c?.createdAt ?: 0)
+            return map[id] ?: CustomerBalance(id, c?.name ?: fallbackName, c?.phone.orEmpty(), 0, 0, c?.createdAt ?: 0, cedula = c?.cedula.orEmpty())
         }
         for (sale in sales.filter { it.isFiado && it.customerId != null }) {
             val b0 = base(sale.customerId!!, sale.customerName ?: "Cliente")
@@ -217,18 +218,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         customerName: String,
         customerPhone: String,
         existingCustomerId: String?,
+        customerCedula: String = "",
     ) {
         val s = session.value ?: return
         val now = System.currentTimeMillis()
         var customerId: String? = null
         var name: String? = null
         if (fiado) {
+            val ced = normalizeCedula(customerCedula)
             val existing = existingCustomerId?.let { id -> data.value.customers.find { it.id == id } }
+                ?: ced.takeIf { it.isNotEmpty() }?.let { c -> data.value.customers.find { cedulaDigits(it.cedula) == cedulaDigits(c) } }
                 ?: data.value.customers.find { it.name.equals(customerName.trim(), ignoreCase = true) }
             val customer = if (existing != null) {
-                if (customerPhone.isNotBlank() && customerPhone.trim() != existing.phone) existing.copy(phone = customerPhone.trim()).also { repo.saveCustomer(it) } else existing
+                val updated = existing.copy(
+                    phone = customerPhone.trim().ifBlank { existing.phone },
+                    cedula = ced.ifBlank { existing.cedula },
+                )
+                if (updated != existing) updated.also { repo.saveCustomer(it) } else existing
             } else {
-                Customer(repo.newId(), customerName.trim(), customerPhone.trim(), now).also { repo.saveCustomer(it) }
+                Customer(repo.newId(), customerName.trim(), customerPhone.trim(), now, cedula = ced).also { repo.saveCustomer(it) }
             }
             customerId = customer.id
             name = customer.name
@@ -267,10 +275,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    fun updateCustomer(id: String, name: String, phone: String) {
+    fun updateCustomer(id: String, name: String, phone: String, cedula: String) {
         val existing = data.value.customers.find { it.id == id }
-        val c = existing?.copy(name = name.trim(), phone = phone.trim())
-            ?: Customer(id, name.trim(), phone.trim(), System.currentTimeMillis())
+        val ced = normalizeCedula(cedula)
+        val c = existing?.copy(name = name.trim(), phone = phone.trim(), cedula = ced)
+            ?: Customer(id, name.trim(), phone.trim(), System.currentTimeMillis(), cedula = ced)
         repo.saveCustomer(c)
     }
 
@@ -358,13 +367,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------- quotes ----------
 
-    fun saveQuote(customerName: String, customerPhone: String, items: List<SaleItem>, note: String, validDays: Int): Quote {
+    fun saveQuote(customerName: String, customerPhone: String, items: List<SaleItem>, note: String, validDays: Int, customerCedula: String = ""): Quote {
         val s = session.value
         val q = Quote(
             id = repo.newId(),
             number = (data.value.quotes.maxOfOrNull { it.number } ?: 0) + 1,
             customerName = customerName.trim(),
             customerPhone = customerPhone.trim(),
+            customerCedula = normalizeCedula(customerCedula),
             items = items,
             totalCents = items.sumOf { it.priceCents * it.qty },
             rate = ledger.value.effectiveRate,

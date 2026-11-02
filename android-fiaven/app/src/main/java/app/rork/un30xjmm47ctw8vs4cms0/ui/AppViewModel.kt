@@ -71,6 +71,10 @@ data class Ledger(
     val overdue: List<CustomerBalance> = emptyList(),
     val todayClosing: Closing? = null,
     val stock: Map<String, StockInfo> = emptyMap(),
+    /** Duplicates (same cédula / phone) unified into one person. */
+    val groups: CustomerGroups = CustomerGroups.EMPTY,
+    /** Every customer with purchase count, spending and frequency. */
+    val clients: List<ClientStats> = emptyList(),
 ) {
     val overdueCents: Long get() = overdue.sumOf { it.owedCents }
 }
@@ -134,21 +138,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val cashToday = sales.filter { !it.isFiado && it.createdAt >= today }.sumOf { it.totalCents } +
             payments.filter { it.createdAt >= today }.sumOf { it.amountCents }
 
-        val customersById = d.customers.associateBy { it.id }
+        // Same person registered twice (same cédula or phone) → one account, debts added together.
+        val groups = CustomerGroups.of(d.customers)
         val map = LinkedHashMap<String, CustomerBalance>()
         fun base(id: String, fallbackName: String): CustomerBalance {
-            val c = customersById[id]
+            val c = groups.merged[id]
             return map[id] ?: CustomerBalance(id, c?.name ?: fallbackName, c?.phone.orEmpty(), 0, 0, c?.createdAt ?: 0, cedula = c?.cedula.orEmpty())
         }
         for (sale in sales.filter { it.isFiado && it.customerId != null }) {
-            val b0 = base(sale.customerId!!, sale.customerName ?: "Cliente")
-            map[sale.customerId] = b0.copy(fiadoCents = b0.fiadoCents + sale.totalCents, lastActivity = maxOf(b0.lastActivity, sale.createdAt))
+            val id = groups.canonicalOf(sale.customerId!!)
+            val b0 = base(id, sale.customerName ?: "Cliente")
+            map[id] = b0.copy(fiadoCents = b0.fiadoCents + sale.totalCents, lastActivity = maxOf(b0.lastActivity, sale.createdAt))
         }
         for (p in payments) {
-            val b0 = base(p.customerId, p.customerName)
-            map[p.customerId] = b0.copy(paidCents = b0.paidCents + p.amountCents, lastActivity = maxOf(b0.lastActivity, p.createdAt))
+            val id = groups.canonicalOf(p.customerId)
+            val b0 = base(id, p.customerName)
+            map[id] = b0.copy(paidCents = b0.paidCents + p.amountCents, lastActivity = maxOf(b0.lastActivity, p.createdAt))
         }
-        val fiadosByCustomer = sales.filter { it.isFiado && it.customerId != null }.groupBy { it.customerId!! }
+        val fiadosByCustomer = sales.filter { it.isFiado && it.customerId != null }.groupBy { groups.canonicalOf(it.customerId!!) }
         val balances = map.values
             .map { it.copy(debtSince = oldestUnpaidSince(fiadosByCustomer[it.customerId].orEmpty(), it.paidCents)) }
             .sortedWith(
@@ -175,6 +182,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             overdue = balances.filter { it.overdue },
             todayClosing = d.closings.find { it.id == dayKey(today) },
             stock = stockInfo(d),
+            groups = groups,
+            clients = buildClientStats(groups, d.sales, balances.associate { it.customerId to it.owedCents }),
         )
     }
 
@@ -265,9 +274,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // Every sale (contado or fiado) carries the customer so it can print an invoice.
         if (fiado || customerName.isNotBlank()) {
             val ced = normalizeCedula(customerCedula)
-            val existing = existingCustomerId?.let { id -> data.value.customers.find { it.id == id } }
-                ?: ced.takeIf { it.isNotEmpty() }?.let { c -> data.value.customers.find { cedulaDigits(it.cedula) == cedulaDigits(c) } }
-                ?: data.value.customers.find { it.name.equals(customerName.trim(), ignoreCase = true) }
+            // Never create the same person twice: cédula first, then phone, then the picked customer.
+            val groups = CustomerGroups.of(data.value.customers)
+            val picked = existingCustomerId?.let { id -> groups.merged[groups.canonicalOf(id)] }
+                ?.takeIf { p -> ced.isEmpty() || p.cedula.isBlank() || cedulaDigits(p.cedula) == cedulaDigits(ced) }
+            val existing = groups.byCedula(ced)
+                ?: picked
+                ?: groups.byPhone(customerPhone, ced)?.takeIf { sameFirstName(it.name, customerName) }
+                ?: if (ced.isEmpty() && customerPhone.isBlank()) groups.people.find { it.name.equals(customerName.trim(), ignoreCase = true) } else null
             val customer = if (existing != null) {
                 val updated = existing.copy(
                     phone = customerPhone.trim().ifBlank { existing.phone },
@@ -319,12 +333,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /** Another person who already has this cédula or phone (editing to it would merge both). */
+    fun duplicateOf(id: String, phone: String, cedula: String): Customer? {
+        val g = ledger.value.groups
+        val mine = g.canonicalOf(id)
+        return (g.byCedula(cedula) ?: g.byPhone(phone, cedula))?.takeIf { it.id != mine }
+    }
+
+    /** Edits every record of the person, so duplicates stay together. */
     fun updateCustomer(id: String, name: String, phone: String, cedula: String) {
-        val existing = data.value.customers.find { it.id == id }
         val ced = normalizeCedula(cedula)
-        val c = existing?.copy(name = name.trim(), phone = phone.trim(), cedula = ced)
-            ?: Customer(id, name.trim(), phone.trim(), System.currentTimeMillis(), cedula = ced)
-        repo.saveCustomer(c)
+        val ids = ledger.value.groups.memberIds(id)
+        val records = data.value.customers.filter { it.id in ids }
+        if (records.isEmpty()) {
+            repo.saveCustomer(Customer(id, name.trim(), phone.trim(), System.currentTimeMillis(), cedula = ced))
+            return
+        }
+        for (c in records) {
+            val u = c.copy(name = name.trim(), phone = phone.trim(), cedula = ced)
+            if (u != c) repo.saveCustomer(u)
+        }
     }
 
     fun voidSale(sale: Sale) = repo.saveSale(sale.copy(voided = true))

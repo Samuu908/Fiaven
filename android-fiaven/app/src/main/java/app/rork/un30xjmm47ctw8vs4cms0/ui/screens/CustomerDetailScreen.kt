@@ -1,6 +1,8 @@
 package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
 
 import app.rork.un30xjmm47ctw8vs4cms0.ui.customerSubtitle
+import app.rork.un30xjmm47ctw8vs4cms0.ui.ClientStats
+import app.rork.un30xjmm47ctw8vs4cms0.ui.agoLabel
 import app.rork.un30xjmm47ctw8vs4cms0.ui.prettyCedula
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import android.content.Intent
@@ -80,28 +82,32 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.shortDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Unit) {
+fun CustomerDetailScreen(vm: AppViewModel, customerId0: String, onBack: () -> Unit) {
     val data by vm.data.collectAsStateWithLifecycle()
     val ledger by vm.ledger.collectAsStateWithLifecycle()
     val session by vm.session.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val isOwner = session?.isOwner == true
 
-    val customer = data.customers.find { it.id == customerId }
+    // Duplicates of the same person open as one account.
+    val customerId = ledger.groups.canonicalOf(customerId0)
+    val memberIds = remember(ledger.groups, customerId) { ledger.groups.memberIds(customerId) }
+    val customer = ledger.groups.merged[customerId] ?: data.customers.find { it.id == customerId }
+    val stats = ledger.clients.find { it.customer.id == customerId }
     val balance = ledger.balances.find { it.customerId == customerId }
         ?: CustomerBalance(customerId, customer?.name ?: "Cliente", customer?.phone.orEmpty(), 0, 0, 0, cedula = customer?.cedula.orEmpty())
 
     val me = session?.username
-    val history = remember(data, customerId, me) {
-        val sales = data.sales.filter { it.customerId == customerId && it.isFiado }.map { s ->
+    val history = remember(data, memberIds, me) {
+        val sales = data.sales.filter { it.customerId in memberIds && !it.voided }.map { s ->
             val what = if (s.items.size == 1) "${s.items[0].name} x${s.items[0].qty}" else "${s.items.size} productos"
-            ActivityItem("s:${s.id}", false, (if (s.voided) "Anulado · " else "Fiado · ") + what,
+            ActivityItem("s:${s.id}", false, (if (s.isFiado) "Fiado · " else "Contado · ") + what,
                 if (s.authorUser == me) "Tú" else s.authorName, s.createdAt, s.totalCents,
-                "${Kinds.SALE}:${s.id}" in data.dirtyKeys, !s.voided)
+                "${Kinds.SALE}:${s.id}" in data.dirtyKeys, s.isFiado)
         }
-        val pays = data.payments.filter { it.customerId == customerId }.map { p ->
+        val pays = data.payments.filter { it.customerId in memberIds && !it.voided }.map { p ->
             ActivityItem("p:${p.id}", true,
-                (if (p.voided) "Anulado · " else "Abono") + if (p.currency == "BS") " · ${bsAmount(p.originalAmount)}" else "",
+                "Abono" + if (p.currency == "BS") " · ${bsAmount(p.originalAmount)}" else "",
                 if (p.authorUser == me) "Tú" else p.authorName, p.createdAt, p.amountCents,
                 "${Kinds.PAYMENT}:${p.id}" in data.dirtyKeys, false)
         }
@@ -160,6 +166,18 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
                     }
                 }
             }
+            if (stats != null) {
+                item { ClientStatsCard(stats) }
+            }
+            if (memberIds.size > 1) {
+                item {
+                    Text(
+                        "Unificado: ${memberIds.size} registros con la misma cédula o teléfono se muestran como un solo cliente.",
+                        style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                }
+            }
             if (balance.overdue) {
                 item {
                     FvCard(container = FV.DangerTint, border = FV.DangerSoft, contentPadding = PaddingValues(16.dp)) {
@@ -176,7 +194,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
                     }
                 }
             }
-            item {
+            if (balance.fiadoCents > 0 || balance.paidCents > 0) item {
                 FvCard(container = if (balance.overdue) FV.DangerTint else FV.AmberTint, border = if (balance.overdue) FV.DangerSoft else FV.AmberSoft) {
                     Text("Debe", style = MaterialTheme.typography.titleSmall, color = FV.Muted)
                     Text(
@@ -224,7 +242,7 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
             }
             item { SectionHeader("Historial") }
             if (history.isEmpty()) {
-                item { EmptyState(Icons.Filled.History, "Sin movimientos", "Aquí verás sus fiados y abonos.") }
+                item { EmptyState(Icons.Filled.History, "Sin movimientos", "Aquí verás sus compras, fiados y abonos.") }
             } else {
                 item {
                     Surface(shape = RoundedCornerShape(20.dp), color = FV.Surface, border = BorderStroke(1.dp, FV.Hairline)) {
@@ -264,7 +282,11 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
         }
     }
     if (showEdit) {
-        EditCustomerDialog(balance.name, balance.phone, balance.cedula, onDismiss = { showEdit = false }) { n, p, c ->
+        EditCustomerDialog(
+            balance.name, balance.phone, balance.cedula,
+            duplicateOf = { p, c -> vm.duplicateOf(customerId, p, c)?.name },
+            onDismiss = { showEdit = false },
+        ) { n, p, c ->
             vm.updateCustomer(customerId, n, p, c)
             showEdit = false
         }
@@ -324,10 +346,16 @@ private fun PaymentDialog(
 }
 
 @Composable
-private fun EditCustomerDialog(name0: String, phone0: String, cedula0: String, onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
+private fun EditCustomerDialog(
+    name0: String, phone0: String, cedula0: String,
+    duplicateOf: (String, String) -> String?,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Unit,
+) {
     var name by remember { mutableStateOf(name0) }
     var cedula by remember { mutableStateOf(prettyCedula(cedula0)) }
     var phone by remember { mutableStateOf(phone0) }
+    val other = duplicateOf(phone, cedula)
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = FV.Surface,
@@ -345,9 +373,61 @@ private fun EditCustomerDialog(name0: String, phone0: String, cedula0: String, o
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
                 )
+                if (other != null) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = FV.AmberTint, border = BorderStroke(1.dp, FV.AmberSoft)) {
+                        Text(
+                            "Esa cédula o teléfono ya es de $other. Si guardas, ambos quedarán como un solo cliente y sus deudas se sumarán.",
+                            style = MaterialTheme.typography.bodySmall, color = FV.AmberText, modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                }
             }
         },
-        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(name, phone, cedula) }) { Text("Guardar") } },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = { onSave(name, phone, cedula) }) {
+                Text(if (other != null) "Unir y guardar" else "Guardar")
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
+}
+
+@Composable
+private fun ClientStatsCard(stats: ClientStats) {
+    FvCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Compras", style = MaterialTheme.typography.titleSmall, color = FV.Muted, modifier = Modifier.weight(1f))
+            if (stats.frequent) {
+                Surface(shape = RoundedCornerShape(50), color = FV.GreenTint) {
+                    Text("Frecuente", style = MaterialTheme.typography.labelMedium, color = FV.GreenDark, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                }
+            }
+        }
+        Spacer(Modifier.size(6.dp))
+        Row {
+            Column(Modifier.weight(1f)) {
+                Text("${stats.purchases}", style = MaterialTheme.typography.headlineSmall, color = FV.Ink)
+                Text(if (stats.purchases == 1) "compra" else "compras", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(usd(stats.spentCents), style = MaterialTheme.typography.headlineSmall, color = FV.Green)
+                Text("en total", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+            }
+            Column(Modifier.weight(1f)) {
+                Text("${stats.purchasesLast30}", style = MaterialTheme.typography.headlineSmall, color = FV.Ink)
+                Text("últimos 30 días", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+            }
+        }
+        Spacer(Modifier.size(10.dp))
+        HorizontalDivider(color = FV.Hairline)
+        Spacer(Modifier.size(10.dp))
+        Text(stats.frequencyLabel, style = MaterialTheme.typography.bodyMedium, color = FV.Ink)
+        Text(
+            listOfNotNull(
+                stats.lastPurchase?.let { "Última compra ${agoLabel(it)}" },
+                stats.firstPurchase?.let { "cliente desde el ${shortDate(it)}" },
+            ).joinToString(" · ").ifBlank { "Todavía no ha comprado" },
+            style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+        )
+    }
 }

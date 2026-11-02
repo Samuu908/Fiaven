@@ -1,5 +1,7 @@
 package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
 
+import app.rork.un30xjmm47ctw8vs4cms0.ui.agoLabel
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -430,9 +432,9 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean, app
                             customerCedula = v.take(16); error = null
                             // Exact cédula match fills the customer in at once.
                             val d = cedulaDigits(v)
-                            val hit = if (d.length >= 6) data.customers.firstOrNull { cedulaDigits(it.cedula) == d } else null
+                            val hit = if (d.length >= 6) ledger.groups.byCedula(v) else null
                             if (hit != null) { customerName = hit.name; customerPhone = hit.phone; customerId = hit.id }
-                            else if (customerId != null && data.customers.find { it.id == customerId }?.cedula?.let(::cedulaDigits) != d) customerId = null
+                            else if (customerId != null && ledger.groups.merged[customerId]?.cedula?.let(::cedulaDigits)?.let { it.isNotEmpty() && it != d } == true) customerId = null
                         },
                         placeholder = { Text("Cédula o RIF (busca al cliente)") },
                         leadingIcon = { Icon(Icons.Filled.Badge, null) },
@@ -456,13 +458,36 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean, app
                         colors = fieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    val suggestions = remember(customerName, customerCedula, data.customers, customerId) {
+                    // Known customer: who they are and how often they buy.
+                    val known = customerId?.let { id -> ledger.clients.find { it.customer.id == ledger.groups.canonicalOf(id) } }
+                    if (known != null) {
+                        Surface(shape = RoundedCornerShape(16.dp), color = FV.GreenTint, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                Text(
+                                    if (known.frequent) "Cliente frecuente · ${known.customer.name}" else "Cliente registrado · ${known.customer.name}",
+                                    style = MaterialTheme.typography.titleSmall, color = FV.GreenDark,
+                                )
+                                Text(
+                                    listOfNotNull(
+                                        "${known.purchases} ${if (known.purchases == 1) "compra" else "compras"}",
+                                        known.lastPurchase?.let { "última ${agoLabel(it)}" },
+                                        known.frequencyLabel.takeIf { known.purchases > 1 },
+                                    ).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall, color = FV.Ink,
+                                )
+                                if (known.owedCents > 0) {
+                                    Text("Ya debe ${usd(known.owedCents)}", style = MaterialTheme.typography.bodySmall, color = FV.AmberText)
+                                }
+                            }
+                        }
+                    }
+                    val suggestions = remember(customerName, customerCedula, ledger.groups, customerId) {
                         val byName = customerName.trim()
                         val byCed = cedulaDigits(customerCedula)
                         when {
                             customerId != null -> emptyList()
-                            byCed.length >= 3 -> data.customers.filter { cedulaDigits(it.cedula).contains(byCed) }.take(5)
-                            byName.isNotEmpty() -> data.customers.filter { it.matchesQuery(byName) && !it.name.equals(byName, true) }.take(5)
+                            byCed.length >= 3 -> ledger.groups.people.filter { cedulaDigits(it.cedula).contains(byCed) }.take(5)
+                            byName.isNotEmpty() -> ledger.groups.people.filter { it.matchesQuery(byName) && !it.name.equals(byName, true) }.take(5)
                             else -> emptyList()
                         }
                     }

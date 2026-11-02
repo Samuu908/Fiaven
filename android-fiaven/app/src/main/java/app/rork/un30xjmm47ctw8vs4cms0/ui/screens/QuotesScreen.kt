@@ -335,8 +335,8 @@ fun QuoteBuilderScreen(vm: AppViewModel, onBack: () -> Unit) {
                         val byCed = cedulaDigits(cedula)
                         when {
                             picked -> emptyList()
-                            byCed.length >= 3 -> data.customers.filter { cedulaDigits(it.cedula).contains(byCed) }.take(5)
-                            customer.isNotBlank() -> data.customers.filter { it.matchesQuery(customer) && !it.name.equals(customer.trim(), true) }.take(5)
+                            byCed.length >= 3 -> vm.ledger.value.groups.people.filter { cedulaDigits(it.cedula).contains(byCed) }.take(5)
+                            customer.isNotBlank() -> vm.ledger.value.groups.people.filter { it.matchesQuery(customer) && !it.name.equals(customer.trim(), true) }.take(5)
                             else -> emptyList()
                         }
                     }
@@ -359,7 +359,7 @@ fun QuoteBuilderScreen(vm: AppViewModel, onBack: () -> Unit) {
                         { v ->
                             cedula = v.take(16)
                             val d = cedulaDigits(v)
-                            val hit = if (d.length >= 6) data.customers.firstOrNull { cedulaDigits(it.cedula) == d } else null
+                            val hit = if (d.length >= 6) vm.ledger.value.groups.byCedula(v) else null
                             if (hit != null) { customer = hit.name; phone = hit.phone; picked = true }
                         },
                         placeholder = { Text("Cédula o RIF (opcional)") },

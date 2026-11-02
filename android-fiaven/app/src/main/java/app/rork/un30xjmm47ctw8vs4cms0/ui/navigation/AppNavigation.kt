@@ -188,6 +188,11 @@ private fun MainShell(vm: AppViewModel) {
                                     onClick = { menu = false; nav.navigate("cierre") },
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("Clientes") },
+                                    leadingIcon = { Icon(Icons.Filled.People, null) },
+                                    onClick = { menu = false; nav.navigate("clientes") },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Proveedores") },
                                     leadingIcon = { Icon(Icons.Filled.LocalShipping, null) },
                                     onClick = { menu = false; nav.navigate("proveedores") },
@@ -316,7 +321,7 @@ private fun MainShell(vm: AppViewModel) {
             composable("cliente/{id}") { backStack ->
                 CustomerDetailScreen(
                     vm,
-                    customerId = backStack.arguments?.getString("id").orEmpty(),
+                    customerId0 = backStack.arguments?.getString("id").orEmpty(),
                     onBack = { nav.popBackStack() },
                 )
             }
@@ -347,6 +352,9 @@ private fun MainShell(vm: AppViewModel) {
             }
             composable("presupuestos") {
                 QuotesScreen(vm, onBack = { nav.popBackStack() }, onNew = { nav.navigate("presupuesto/nuevo") })
+            }
+            composable("clientes") {
+                app.rork.un30xjmm47ctw8vs4cms0.ui.screens.ClientsScreen(vm, onBack = { nav.popBackStack() }, onOpen = { nav.navigate("cliente/$it") })
             }
             composable("proveedores") {
                 SuppliersScreen(vm, onBack = { nav.popBackStack() }, onOpen = { nav.navigate("proveedor/$it") })

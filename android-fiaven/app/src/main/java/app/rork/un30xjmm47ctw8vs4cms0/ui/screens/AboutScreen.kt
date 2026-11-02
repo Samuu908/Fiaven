@@ -1,5 +1,8 @@
 package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -119,8 +122,11 @@ fun AboutScreen(vm: AppViewModel, onBack: () -> Unit, onSaved: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Spacer(Modifier.height(12.dp))
-            IconBadge(Icons.Filled.Eco, FV.Green, FV.GreenSoft, 84)
-            Text("FiaVen", fontSize = 36.sp, fontWeight = FontWeight.SemiBold, color = FV.GreenDark, letterSpacing = (-1).sp)
+            Image(
+                painterResource(app.rork.un30xjmm47ctw8vs4cms0.R.drawable.kashly_logo), "Kashly",
+                modifier = Modifier.size(84.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)),
+            )
+            Text("Kashly", fontSize = 36.sp, fontWeight = FontWeight.SemiBold, color = FV.GreenDark, letterSpacing = (-1).sp)
             Text("Versión ${app.rork.un30xjmm47ctw8vs4cms0.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
             Spacer(Modifier.height(8.dp))
 

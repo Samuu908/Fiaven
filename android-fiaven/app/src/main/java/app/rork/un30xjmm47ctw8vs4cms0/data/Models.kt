@@ -91,7 +91,7 @@ data class BackupRecord(val kind: String, val id: String, val data: String, val 
 /** File written by "Descargar respaldo". */
 @Serializable
 data class Backup(
-    val app: String = "FiaVen",
+    val app: String = "Kashly",
     val version: Int = 1,
     val businessId: String = "",
     val businessName: String = "",

@@ -360,7 +360,7 @@ class Repository private constructor(private val appContext: Context) {
 
     fun parseBackup(json: String): Backup {
         val b = runCatching { AppJson.decodeFromString(Backup.serializer(), json) }.getOrNull()
-        if (b == null || b.app != "FiaVen") throw IllegalArgumentException("Este archivo no es un respaldo de FiaVen")
+        if (b == null || b.app !in setOf("Kashly", "FiaVen")) throw IllegalArgumentException("Este archivo no es un respaldo de Kashly")
         return b
     }
 

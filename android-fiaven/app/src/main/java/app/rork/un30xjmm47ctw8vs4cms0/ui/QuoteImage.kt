@@ -146,7 +146,7 @@ fun renderQuote(quote: Quote, businessName: String): Bitmap {
     y += 40f
     c.drawLine(M, y, W - M, y, line)
     c.drawText("Precios en dólares; el monto en bolívares cambia según la tasa del día.", W / 2, y + 52f, foot)
-    c.drawText("Hecho con FiaVen", W / 2, y + 96f, paint(26f, GREEN, bold = true, align = Paint.Align.CENTER))
+    c.drawText("Hecho con Kashly", W / 2, y + 96f, paint(26f, GREEN, bold = true, align = Paint.Align.CENTER))
     return bmp
 }
 

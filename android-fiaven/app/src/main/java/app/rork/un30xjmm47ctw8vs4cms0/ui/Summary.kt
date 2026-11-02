@@ -119,7 +119,7 @@ fun summaryMessage(
 ): String {
     val total = days.fold(DaySummary(days.firstOrNull()?.start ?: 0)) { acc, d -> acc + d }
     return buildString {
-        appendLine("*${businessName.ifBlank { "FiaVen" }} · $title*")
+        appendLine("*${businessName.ifBlank { "Kashly" }} · $title*")
         appendLine(period)
         appendLine()
         appendLine("Vendido: *${usd(total.soldCents)}*" + if (rate > 0) " (${bs(total.soldCents, rate)})" else "")
@@ -136,6 +136,6 @@ fun summaryMessage(
             }
         }
         appendLine()
-        append("Enviado desde FiaVen")
+        append("Enviado desde Kashly")
     }
 }

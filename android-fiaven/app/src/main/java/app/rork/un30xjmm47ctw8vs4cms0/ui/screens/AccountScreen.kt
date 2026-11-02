@@ -115,7 +115,7 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
                 val text = context.contentResolver.openInputStream(source)?.use { it.readBytes().decodeToString() } ?: error("vacío")
                 vm.parseBackup(text)
             }.onSuccess { pending = it }
-                .onFailure { Toast.makeText(context, it.message ?: "Este archivo no es un respaldo de FiaVen", Toast.LENGTH_LONG).show() }
+                .onFailure { Toast.makeText(context, it.message ?: "Este archivo no es un respaldo de Kashly", Toast.LENGTH_LONG).show() }
         }
     }
     val data by vm.data.collectAsStateWithLifecycle()
@@ -294,7 +294,7 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
                     runCatching { uri.openUri(vm.privacyUrl) }
                 }
                 HorizontalDivider(color = FV.Hairline, modifier = Modifier.padding(horizontal = 16.dp))
-                LinkRow(Icons.Filled.Info, "Acerca de FiaVen", "Versión, créditos y contacto", onClick = onOpenAbout)
+                LinkRow(Icons.Filled.Info, "Acerca de Kashly", "Versión, créditos y contacto", onClick = onOpenAbout)
             }
 
             FvCard(contentPadding = PaddingValues(vertical = 4.dp)) {

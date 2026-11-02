@@ -41,7 +41,7 @@ fun BusinessAvatar(photo: BusinessPhoto?, businessName: String, size: Int = 40, 
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        initials(businessName.ifBlank { "FiaVen" }),
+                        initials(businessName.ifBlank { "Kashly" }),
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = (size * 0.36f).sp),
                         color = FV.GreenDark, fontWeight = FontWeight.SemiBold,
                     )

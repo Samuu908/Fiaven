@@ -1,5 +1,8 @@
 package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -113,9 +116,12 @@ fun LoginScreen(vm: AppViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(if (creating) 40.dp else 72.dp))
-            IconBadge(Icons.Filled.Eco, FV.Green, FV.GreenSoft, 84)
+            Image(
+                painterResource(app.rork.un30xjmm47ctw8vs4cms0.R.drawable.kashly_logo), "Kashly",
+                modifier = Modifier.size(92.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(26.dp)),
+            )
             Spacer(Modifier.height(20.dp))
-            Text("FiaVen", fontSize = 44.sp, fontWeight = FontWeight.SemiBold, color = FV.GreenDark, letterSpacing = (-1).sp)
+            Text("Kashly", fontSize = 44.sp, fontWeight = FontWeight.SemiBold, color = FV.GreenDark, letterSpacing = (-1).sp)
             Spacer(Modifier.height(6.dp))
             Text(
                 if (creating) "Crea tu negocio en un minuto. Serás el dueño y luego podrás dar acceso a tu equipo."
@@ -212,7 +218,7 @@ fun LoginScreen(vm: AppViewModel) {
             }
             if (!creating) {
                 Text(
-                    "¿Trabajas en un negocio que ya usa FiaVen? Pide tu usuario al dueño.",
+                    "¿Trabajas en un negocio que ya usa Kashly? Pide tu usuario al dueño.",
                     style = MaterialTheme.typography.bodySmall, color = FV.Muted, textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )

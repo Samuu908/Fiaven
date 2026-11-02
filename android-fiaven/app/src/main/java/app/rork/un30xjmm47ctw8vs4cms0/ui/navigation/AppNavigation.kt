@@ -159,7 +159,7 @@ private fun MainShell(vm: AppViewModel) {
                                 )
                                 Spacer(Modifier.width(12.dp))
                                 Column {
-                                    Text("FiaVen", style = MaterialTheme.typography.headlineSmall, color = FV.GreenDark)
+                                    Text("Kashly", style = MaterialTheme.typography.headlineSmall, color = FV.GreenDark)
                                     Text(
                                         session?.businessName?.ifBlank { null } ?: "Tu negocio, siempre contigo",
                                         style = MaterialTheme.typography.bodyMedium, color = FV.Muted, maxLines = 1,

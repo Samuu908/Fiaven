@@ -13,7 +13,7 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="FiaVen"
+        android:label="Kashly"
         android:supportsRtl="true"
         android:theme="@style/Theme.RorkApp">
         <meta-data

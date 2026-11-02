@@ -61,6 +61,10 @@ import androidx.navigation.compose.rememberNavController
 import app.rork.un30xjmm47ctw8vs4cms0.ui.AppViewModel
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.RateChip
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.CajaScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.CalculatorScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.MovementsScreen
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.ReceiptLong
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.AccountScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.AboutScreen
 import androidx.compose.material.icons.filled.AccountCircle
@@ -132,9 +136,20 @@ private fun MainShell(vm: AppViewModel) {
                             }
                         },
                         actions = {
+                            IconButton(onClick = { nav.navigate("calculadora") }) { Icon(Icons.Filled.Calculate, "Calculadora") }
                             IconButton(onClick = { vm.syncNow() }) { Icon(Icons.Filled.Sync, "Sincronizar ahora") }
                             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Más opciones") }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Movimientos") },
+                                    leadingIcon = { Icon(Icons.Filled.ReceiptLong, null) },
+                                    onClick = { menu = false; nav.navigate("movimientos") },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Calculadora") },
+                                    leadingIcon = { Icon(Icons.Filled.Calculate, null) },
+                                    onClick = { menu = false; nav.navigate("calculadora") },
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Resumen semanal") },
                                     leadingIcon = { Icon(Icons.Filled.Insights, null) },
@@ -223,11 +238,12 @@ private fun MainShell(vm: AppViewModel) {
                     onOpenCustomer = { nav.navigate("cliente/$it") },
                     onOpenSummary = { nav.navigate("resumen") },
                     onOpenAccount = { nav.navigate("cuenta") },
+                    onOpenMovements = { nav.navigate("movimientos") },
                 )
             }
             composable("fiados") { FiadosScreen(vm, onOpen = { nav.navigate("cliente/$it") }) }
             composable("catalogo") { CatalogScreen(vm) }
-            composable("tasa") { RateScreen(vm, onSaved = { scope.launch { snackbar.showSnackbar("Tasa guardada para todo el equipo") } }) }
+            composable("tasa") { RateScreen(vm, onOpenCalculator = { nav.navigate("calculadora") }, onSaved = { scope.launch { snackbar.showSnackbar("Tasa guardada para todo el equipo") } }) }
             composable("cliente/{id}") { backStack ->
                 CustomerDetailScreen(
                     vm,
@@ -237,6 +253,10 @@ private fun MainShell(vm: AppViewModel) {
             }
             composable("equipo") { TeamScreen(vm, onBack = { nav.popBackStack() }) }
             composable("resumen") { SummaryScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("calculadora") { CalculatorScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("movimientos") {
+                MovementsScreen(vm, onBack = { nav.popBackStack() }, onOpenCustomer = { nav.navigate("cliente/$it") })
+            }
             composable("cuenta") {
                 AccountScreen(
                     vm,

@@ -94,22 +94,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val balances = map.values.sortedWith(compareByDescending<CustomerBalance> { it.owedCents > 0 }.thenByDescending { it.lastActivity })
 
         val me = s?.username
-        fun who(user: String, name: String) = if (user == me) "Tú" else name
         val activity = buildList {
-            for (sale in sales.take(60)) {
-                val what = when {
-                    sale.items.size == 1 -> sale.items[0].let { "${it.name} x${it.qty}" }
-                    sale.items.isEmpty() -> "Venta"
-                    else -> "${sale.items.size} productos"
-                }
-                val title = if (sale.isFiado) "Fiado · ${sale.customerName ?: "Cliente"} · $what" else "Contado · $what"
-                add(ActivityItem("s:${sale.id}", false, title, who(sale.authorUser, sale.authorName), sale.createdAt, sale.totalCents,
-                    "${Kinds.SALE}:${sale.id}" in d.dirtyKeys, sale.isFiado))
-            }
-            for (p in payments.take(60)) {
-                add(ActivityItem("p:${p.id}", true, "Abono · ${p.customerName}", who(p.authorUser, p.authorName), p.createdAt, p.amountCents,
-                    "${Kinds.PAYMENT}:${p.id}" in d.dirtyKeys, false))
-            }
+            for (sale in sales.take(60)) add(saleActivity(sale, me, d.dirtyKeys))
+            for (p in payments.take(60)) add(paymentActivity(p, me, d.dirtyKeys))
         }.sortedByDescending { it.createdAt }.take(60)
 
         return Ledger(

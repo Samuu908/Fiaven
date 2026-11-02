@@ -121,7 +121,7 @@ fun AboutScreen(vm: AppViewModel, onBack: () -> Unit, onSaved: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             IconBadge(Icons.Filled.Eco, FV.Green, FV.GreenSoft, 84)
             Text("FiaVen", fontSize = 36.sp, fontWeight = FontWeight.SemiBold, color = FV.GreenDark, letterSpacing = (-1).sp)
-            Text("Versión 1.0", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+            Text("Versión ${app.rork.un30xjmm47ctw8vs4cms0.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
             Spacer(Modifier.height(8.dp))
 
             FvCard(Modifier.fillMaxWidth()) {

@@ -51,10 +51,14 @@ fun weekStart(millis: Long = System.currentTimeMillis(), offsetWeeks: Int = 0): 
 private fun addDays(start: Long, days: Int): Long =
     Calendar.getInstance().apply { timeInMillis = start; add(Calendar.DAY_OF_MONTH, days) }.timeInMillis
 
-fun buildWeek(d: AppData, start: Long): WeekSummary {
-    val bounds = (0..7).map { addDays(start, it) }
-    val days = Array(7) { DaySummary(bounds[it]) }
-    fun index(t: Long): Int = if (t < bounds[0] || t >= bounds[7]) -1 else (0 until 7).first { t < bounds[it + 1] }
+fun buildWeek(d: AppData, start: Long): WeekSummary =
+    WeekSummary(start, buildBuckets(d, (0..7).map { addDays(start, it) }))
+
+/** Totals per bucket; [bounds] are ascending starts with the final end appended (n buckets = n+1 bounds). */
+fun buildBuckets(d: AppData, bounds: List<Long>): List<DaySummary> {
+    val n = bounds.size - 1
+    val days = Array(n) { DaySummary(bounds[it]) }
+    fun index(t: Long): Int = if (t < bounds[0] || t >= bounds[n]) -1 else (0 until n).first { t < bounds[it + 1] }
 
     for (sale in d.sales) {
         if (sale.voided) continue
@@ -82,7 +86,7 @@ fun buildWeek(d: AppData, start: Long): WeekSummary {
         if (i < 0) continue
         days[i] = days[i].copy(abonosCents = days[i].abonosCents + p.amountCents)
     }
-    return WeekSummary(start, days.toList())
+    return days.toList()
 }
 
 fun weekLabel(start: Long): String {

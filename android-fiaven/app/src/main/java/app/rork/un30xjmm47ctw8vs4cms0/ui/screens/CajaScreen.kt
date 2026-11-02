@@ -76,6 +76,7 @@ fun CajaScreen(
     onOpenCustomer: (String) -> Unit,
     onOpenSummary: () -> Unit,
     onOpenAccount: () -> Unit,
+    onOpenMovements: () -> Unit,
 ) {
     val security by vm.security.collectAsStateWithLifecycle()
     val ledger by vm.ledger.collectAsStateWithLifecycle()
@@ -187,7 +188,11 @@ fun CajaScreen(
             }
         }
 
-        item { SectionHeader("Actividad reciente") }
+        item {
+            SectionHeader("Actividad reciente") {
+                TextButton(onClick = onOpenMovements) { Text("Ver por fecha", color = FV.GreenDark) }
+            }
+        }
 
         if (ledger.activity.isEmpty()) {
             item {

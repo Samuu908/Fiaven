@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,7 +50,7 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.FV
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.MoneyLarge
 
 @Composable
-fun RateScreen(vm: AppViewModel, onSaved: () -> Unit) {
+fun RateScreen(vm: AppViewModel, onOpenCalculator: () -> Unit, onSaved: () -> Unit) {
     val data by vm.data.collectAsStateWithLifecycle()
     val bcv by vm.bcv.collectAsStateWithLifecycle()
     val ledger by vm.ledger.collectAsStateWithLifecycle()
@@ -143,5 +144,15 @@ fun RateScreen(vm: AppViewModel, onSaved: () -> Unit) {
             "Tasa en uso ahora: Bs ${formatNumber(ledger.effectiveRate)} por \$1. Cada venta guarda la tasa del momento.",
             style = MaterialTheme.typography.bodySmall, color = FV.Muted, modifier = Modifier.padding(horizontal = 4.dp),
         )
+
+        FvCard(onClick = onOpenCalculator) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Calculadora \$ ⇄ Bs", style = MaterialTheme.typography.titleMedium, color = FV.Ink)
+                    Text("Convierte dólares a bolívares y al revés con la tasa", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                }
+                IconBadge(Icons.Filled.Calculate, FV.Green, FV.GreenSoft)
+            }
+        }
     }
 }

@@ -13,8 +13,8 @@ android {
         applicationId = "app.rork.un30xjmm47ctw8vs4cms0"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.7"
+        versionCode = 8
+        versionName = "1.8"
     }
 
     buildTypes {

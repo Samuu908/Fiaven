@@ -229,8 +229,8 @@ fun MovementsScreen(vm: AppViewModel, onBack: () -> Unit, onOpenCustomer: (Strin
                             shape = RoundedCornerShape(12.dp),
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = FV.Surface,
-                                selectedContainerColor = if (f == MoveFilter.FIADO) FV.AmberSoft else FV.GreenSoft,
-                                selectedLabelColor = if (f == MoveFilter.FIADO) FV.AmberText else FV.GreenDark,
+                                selectedContainerColor = when (f) { MoveFilter.FIADO -> FV.AmberSoft; MoveFilter.ANULADAS -> FV.DangerTint; else -> FV.GreenSoft },
+                                selectedLabelColor = when (f) { MoveFilter.FIADO -> FV.AmberText; MoveFilter.ANULADAS -> FV.Danger; else -> FV.GreenDark },
                             ),
                         )
                     }
@@ -240,8 +240,10 @@ fun MovementsScreen(vm: AppViewModel, onBack: () -> Unit, onOpenCustomer: (Strin
             if (moves.isEmpty()) {
                 item(key = "empty") {
                     EmptyState(
-                        Icons.Filled.ReceiptLong, "Sin movimientos",
-                        "No hay operaciones en este período. Cambia la fecha o el filtro.",
+                        Icons.Filled.ReceiptLong,
+                        if (filter == MoveFilter.ANULADAS) "Nada anulado" else "Sin movimientos",
+                        if (filter == MoveFilter.ANULADAS) "No se anuló ninguna venta ni abono en este período."
+                        else "No hay operaciones en este período. Cambia la fecha o el filtro.",
                     )
                 }
             } else {
@@ -251,7 +253,7 @@ fun MovementsScreen(vm: AppViewModel, onBack: () -> Unit, onOpenCustomer: (Strin
                             Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(dayHeader(day), style = MaterialTheme.typography.titleSmall, color = FV.Ink, modifier = Modifier.weight(1f))
                                 Text(
-                                    usd(list.filter { !it.isPayment }.sumOf { it.amountCents }),
+                                    usd(list.filter { !it.isPayment && !it.voided }.sumOf { it.amountCents }),
                                     style = MaterialTheme.typography.labelLarge, color = FV.Muted,
                                 )
                             }

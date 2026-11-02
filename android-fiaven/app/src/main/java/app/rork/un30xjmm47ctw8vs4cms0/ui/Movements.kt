@@ -11,7 +11,10 @@ import java.util.Locale
 
 enum class Period(val label: String) { DIA("Día"), MES("Mes"), ANIO("Año") }
 
-enum class MoveFilter(val label: String) { TODO("Todo"), CONTADO("Contado"), FIADO("Fiados"), ABONO("Abonos") }
+enum class MoveFilter(val label: String) { TODO("Todo"), CONTADO("Contado"), FIADO("Fiados"), ABONO("Abonos"), ANULADAS("Anuladas") }
+
+fun voiderLabel(user: String?, name: String?, me: String?): String? =
+    if (user != null && user == me) "ti" else name?.ifBlank { null }
 
 private val es = Locale("es", "VE")
 
@@ -82,28 +85,35 @@ fun saleActivity(sale: Sale, me: String?, dirty: Set<String>): ActivityItem {
     val title = if (sale.isFiado) "Fiado · ${sale.customerName ?: "Cliente"} · $what" else "Contado · $what"
     return ActivityItem(
         "s:${sale.id}", false, title, if (sale.authorUser == me) "Tú" else sale.authorName, sale.createdAt, sale.totalCents,
-        "${Kinds.SALE}:${sale.id}" in dirty, sale.isFiado,
+        "${Kinds.SALE}:${sale.id}" in dirty, sale.isFiado && !sale.voided,
+        voided = sale.voided, voidedBy = voiderLabel(sale.voidedBy, sale.voidedByName, me),
     )
 }
 
 fun paymentActivity(p: Payment, me: String?, dirty: Set<String>): ActivityItem = ActivityItem(
     "p:${p.id}", true, "Abono · ${p.customerName}", if (p.authorUser == me) "Tú" else p.authorName, p.createdAt, p.amountCents,
     "${Kinds.PAYMENT}:${p.id}" in dirty, false,
+    voided = p.voided, voidedBy = voiderLabel(p.voidedBy, p.voidedByName, me),
 )
 
-/** All non-voided operations in [start, end), newest first. */
+/** Operations in [start, end), newest first. "Todo" also lists voided ones (marked); "Anuladas" lists only those. */
 fun movementsIn(d: AppData, start: Long, end: Long, filter: MoveFilter, me: String?): List<ActivityItem> = buildList {
+    fun skipVoid(v: Boolean) = when (filter) {
+        MoveFilter.TODO -> false
+        MoveFilter.ANULADAS -> !v
+        else -> v
+    }
     if (filter != MoveFilter.ABONO) {
         for (s in d.sales) {
-            if (s.voided || s.createdAt < start || s.createdAt >= end) continue
+            if (skipVoid(s.voided) || s.createdAt < start || s.createdAt >= end) continue
             if (filter == MoveFilter.CONTADO && s.isFiado) continue
             if (filter == MoveFilter.FIADO && !s.isFiado) continue
             add(saleActivity(s, me, d.dirtyKeys))
         }
     }
-    if (filter == MoveFilter.TODO || filter == MoveFilter.ABONO) {
+    if (filter == MoveFilter.TODO || filter == MoveFilter.ABONO || filter == MoveFilter.ANULADAS) {
         for (p in d.payments) {
-            if (p.voided || p.createdAt < start || p.createdAt >= end) continue
+            if (skipVoid(p.voided) || p.createdAt < start || p.createdAt >= end) continue
             add(paymentActivity(p, me, d.dirtyKeys))
         }
     }

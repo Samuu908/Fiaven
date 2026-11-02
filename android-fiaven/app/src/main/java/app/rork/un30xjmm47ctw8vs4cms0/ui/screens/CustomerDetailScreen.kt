@@ -95,15 +95,17 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId: String, onBack: () -> Uni
     val history = remember(data, customerId, me) {
         val sales = data.sales.filter { it.customerId == customerId && it.isFiado }.map { s ->
             val what = if (s.items.size == 1) "${s.items[0].name} x${s.items[0].qty}" else "${s.items.size} productos"
-            ActivityItem("s:${s.id}", false, (if (s.voided) "Anulado · " else "Fiado · ") + what,
+            ActivityItem("s:${s.id}", false, "Fiado · " + what,
                 if (s.authorUser == me) "Tú" else s.authorName, s.createdAt, s.totalCents,
-                "${Kinds.SALE}:${s.id}" in data.dirtyKeys, !s.voided)
+                "${Kinds.SALE}:${s.id}" in data.dirtyKeys, !s.voided,
+                voided = s.voided, voidedBy = app.rork.un30xjmm47ctw8vs4cms0.ui.voiderLabel(s.voidedBy, s.voidedByName, me))
         }
         val pays = data.payments.filter { it.customerId == customerId }.map { p ->
             ActivityItem("p:${p.id}", true,
-                (if (p.voided) "Anulado · " else "Abono") + if (p.currency == "BS") " · ${bsAmount(p.originalAmount)}" else "",
+                "Abono" + if (p.currency == "BS") " · ${bsAmount(p.originalAmount)}" else "",
                 if (p.authorUser == me) "Tú" else p.authorName, p.createdAt, p.amountCents,
-                "${Kinds.PAYMENT}:${p.id}" in data.dirtyKeys, false)
+                "${Kinds.PAYMENT}:${p.id}" in data.dirtyKeys, false,
+                voided = p.voided, voidedBy = app.rork.un30xjmm47ctw8vs4cms0.ui.voiderLabel(p.voidedBy, p.voidedByName, me))
         }
         (sales + pays).sortedByDescending { it.createdAt }
     }

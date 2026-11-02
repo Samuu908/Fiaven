@@ -189,6 +189,9 @@ data class Sale(
     val authorName: String,
     val createdAt: Long,
     val voided: Boolean = false,
+    val voidedBy: String? = null,
+    val voidedByName: String? = null,
+    val voidedAt: Long? = null,
 ) {
     val isFiado: Boolean get() = type == "fiado"
 }
@@ -206,6 +209,9 @@ data class Payment(
     val authorName: String,
     val createdAt: Long,
     val voided: Boolean = false,
+    val voidedBy: String? = null,
+    val voidedByName: String? = null,
+    val voidedAt: Long? = null,
 )
 
 @Serializable

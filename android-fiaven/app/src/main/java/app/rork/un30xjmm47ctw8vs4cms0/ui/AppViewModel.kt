@@ -58,6 +58,9 @@ data class ActivityItem(
     val amountCents: Long,
     val pending: Boolean,
     val fiado: Boolean,
+    val voided: Boolean = false,
+    /** Who voided it ("Tú" for me); null if unknown (voided by an older app version). */
+    val voidedBy: String? = null,
 )
 
 data class Ledger(
@@ -160,8 +163,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         val me = s?.username
         val activity = buildList {
-            for (sale in sales.take(60)) add(saleActivity(sale, me, d.dirtyKeys))
-            for (p in payments.take(60)) add(paymentActivity(p, me, d.dirtyKeys))
+            // Voided ones stay visible (marked) so everyone sees what was cancelled and by whom.
+            for (sale in d.sales.take(60)) add(saleActivity(sale, me, d.dirtyKeys))
+            for (p in d.payments.take(60)) add(paymentActivity(p, me, d.dirtyKeys))
         }.sortedByDescending { it.createdAt }.take(60)
 
         return Ledger(
@@ -319,8 +323,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repo.saveCustomer(c)
     }
 
-    fun voidSale(sale: Sale) = repo.saveSale(sale.copy(voided = true))
-    fun voidPayment(payment: Payment) = repo.savePayment(payment.copy(voided = true))
+    fun voidSale(sale: Sale) {
+        val s = session.value
+        repo.saveSale(sale.copy(voided = true, voidedBy = s?.username, voidedByName = s?.displayName, voidedAt = System.currentTimeMillis()))
+    }
+
+    fun voidPayment(payment: Payment) {
+        val s = session.value
+        repo.savePayment(payment.copy(voided = true, voidedBy = s?.username, voidedByName = s?.displayName, voidedAt = System.currentTimeMillis()))
+    }
 
     /** [newStock] = units on hand right now (recount); null keeps the previous count. */
     fun saveProduct(id: String?, name: String, priceCents: Long, costCents: Long?, barcode: String?, newStock: Int?) {

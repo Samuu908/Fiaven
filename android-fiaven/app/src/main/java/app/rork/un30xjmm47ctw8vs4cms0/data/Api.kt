@@ -66,6 +66,19 @@ class Api {
         post("/account/security", body("password" to password, "question" to question, "answer" to answer), token)
     }
 
+    suspend fun updateAccount(token: String, password: String, username: String, displayName: String, newPassword: String): AuthResponse =
+        AppJson.decodeFromString(
+            post(
+                "/account/update",
+                body("password" to password, "username" to username, "displayName" to displayName, "newPassword" to newPassword),
+                token,
+            )
+        )
+
+    suspend fun updateMember(token: String, username: String, displayName: String, newPassword: String) {
+        post("/team/update", body("username" to username, "displayName" to displayName, "newPassword" to newPassword), token)
+    }
+
     suspend fun deleteAccount(token: String, password: String) {
         post("/account/delete", body("password" to password), token)
     }

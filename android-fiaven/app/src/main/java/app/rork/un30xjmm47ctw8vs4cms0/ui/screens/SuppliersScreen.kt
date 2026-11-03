@@ -792,7 +792,7 @@ private fun EntrySheet(
     }
 }
 
-private fun localToUtcDay(local: Long): Long {
+fun localToUtcDay(local: Long): Long {
     val c = Calendar.getInstance().apply { timeInMillis = local }
     return Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
         clear(); set(c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH))
@@ -800,7 +800,7 @@ private fun localToUtcDay(local: Long): Long {
 }
 
 /** Picked day → now if it's today, else noon of that day (local time). */
-private fun utcDayToLocal(utc: Long): Long {
+fun utcDayToLocal(utc: Long): Long {
     val u = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = utc }
     val local = Calendar.getInstance().apply {
         set(u.get(Calendar.YEAR), u.get(Calendar.MONTH), u.get(Calendar.DAY_OF_MONTH), 12, 0, 0); set(Calendar.MILLISECOND, 0)
@@ -928,7 +928,7 @@ private fun DetailLine(label: String, value: String) {
 // ---------------------------------------------------------------- attachments
 
 @Composable
-private fun rememberAttachment(vm: AppViewModel, id: String): Pair<File?, Boolean> {
+fun rememberAttachment(vm: AppViewModel, id: String): Pair<File?, Boolean> {
     var file by remember(id) { mutableStateOf<File?>(null) }
     var failed by remember(id) { mutableStateOf(false) }
     LaunchedEffect(id) {
@@ -939,7 +939,7 @@ private fun rememberAttachment(vm: AppViewModel, id: String): Pair<File?, Boolea
 }
 
 @Composable
-private fun AttachmentThumb(vm: AppViewModel, id: String, size: Int, onClick: () -> Unit) {
+fun AttachmentThumb(vm: AppViewModel, id: String, size: Int, onClick: () -> Unit) {
     val (file, failed) = rememberAttachment(vm, id)
     Box(
         Modifier.size(size.dp).clip(RoundedCornerShape(14.dp)).background(FV.Neutral)
@@ -958,7 +958,7 @@ private fun AttachmentThumb(vm: AppViewModel, id: String, size: Int, onClick: ()
 }
 
 @Composable
-private fun AttachmentViewer(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
+fun AttachmentViewer(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val (file, _) = rememberAttachment(vm, id)
     var scale by remember { mutableFloatStateOf(1f) }

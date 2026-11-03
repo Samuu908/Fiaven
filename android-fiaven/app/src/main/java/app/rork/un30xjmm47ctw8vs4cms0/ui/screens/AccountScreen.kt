@@ -85,6 +85,13 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.BusinessAvatar
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.ThemeMode
 import app.rork.un30xjmm47ctw8vs4cms0.ui.theme.ThemePrefs
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.AlternateEmail
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,6 +101,7 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
     val uri = LocalUriHandler.current
     var editingSecurity by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var editMode by remember { mutableStateOf<AccountEdit?>(null) }
     val context = LocalContext.current
     var pending by remember { mutableStateOf<Backup?>(null) }
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { target ->
@@ -173,6 +181,15 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
                         Text(s.roleLabel, style = MaterialTheme.typography.titleSmall, color = FV.Ink)
                     }
                 }
+            }
+
+            SectionHeader("Datos de acceso")
+            FvCard(contentPadding = PaddingValues(vertical = 4.dp)) {
+                LinkRow(Icons.Filled.Badge, "Nombre visible", s.displayName.ifBlank { "Sin nombre" }) { editMode = AccountEdit.NAME }
+                HorizontalDivider(color = FV.Hairline, modifier = Modifier.padding(horizontal = 16.dp))
+                LinkRow(Icons.Filled.AlternateEmail, "Usuario para entrar", "@${s.username}") { editMode = AccountEdit.USERNAME }
+                HorizontalDivider(color = FV.Hairline, modifier = Modifier.padding(horizontal = 16.dp))
+                LinkRow(Icons.Filled.Key, "Contraseña", "Cámbiala cuando quieras") { editMode = AccountEdit.PASSWORD }
             }
 
             SectionHeader("Foto del negocio")
@@ -379,6 +396,116 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit, onOpenAbout: () -> Unit,
         )
     }
     if (deleting) DeleteAccountDialog(vm, isOwner = s.isOwner, businessName = s.businessName, onDismiss = { deleting = false })
+    editMode?.let { mode ->
+        AccountEditDialog(vm, mode, s.username, s.displayName, onDismiss = { editMode = null }) { msg ->
+            editMode = null
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+private enum class AccountEdit { NAME, USERNAME, PASSWORD }
+
+@Composable
+private fun AccountEditDialog(
+    vm: AppViewModel, mode: AccountEdit, username: String, displayName: String,
+    onDismiss: () -> Unit, onSaved: (String) -> Unit,
+) {
+    var value by remember { mutableStateOf(if (mode == AccountEdit.NAME) displayName else if (mode == AccountEdit.USERNAME) username else "") }
+    var confirm by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!loading) onDismiss() },
+        containerColor = FV.Surface,
+        shape = RoundedCornerShape(24.dp),
+        title = {
+            Text(
+                when (mode) {
+                    AccountEdit.NAME -> "Cambiar nombre"
+                    AccountEdit.USERNAME -> "Cambiar usuario"
+                    AccountEdit.PASSWORD -> "Cambiar contraseña"
+                }
+            )
+        },
+        text = {
+            Column(Modifier.imePadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                when (mode) {
+                    AccountEdit.NAME -> {
+                        Text("Es el nombre que ve tu equipo y que sale en las facturas.", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                        OutlinedTextField(
+                            value = value, onValueChange = { value = it.take(60) }, label = { Text("Nombre visible") },
+                            singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    AccountEdit.USERNAME -> {
+                        Text("Con este usuario entras a Kashly. Tus ventas y registros se quedan contigo.", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                        OutlinedTextField(
+                            value = value,
+                            onValueChange = { v -> value = v.lowercase().filter { it.isLetterOrDigit() || it in "._&-" }.take(32) },
+                            label = { Text("Usuario nuevo") }, prefix = { Text("@") },
+                            supportingText = { Text("3 a 32 letras, números, punto, guion o &") },
+                            singleLine = true, shape = RoundedCornerShape(16.dp), colors = fieldColors(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    AccountEdit.PASSWORD -> {
+                        Text("Tus otros teléfonos tendrán que volver a entrar con la contraseña nueva.", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                        PasswordField(value, { value = it }, "Contraseña nueva", imeAction = ImeAction.Next)
+                        PasswordField(confirm, { confirm = it }, "Repite la contraseña nueva", imeAction = ImeAction.Next)
+                    }
+                }
+                PasswordField(password, { password = it }, "Tu contraseña actual", imeAction = ImeAction.Done)
+                AnimatedVisibility(error != null) {
+                    Text(error.orEmpty(), color = FV.Danger, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    error = when {
+                        mode == AccountEdit.NAME && value.trim().length < 2 -> "Escribe tu nombre"
+                        mode == AccountEdit.USERNAME && !Regex("^[a-z0-9._&-]{3,32}$").matches(value.trim()) -> "Usuario no válido"
+                        mode == AccountEdit.PASSWORD && value.length < 6 -> "La contraseña nueva debe tener al menos 6 caracteres"
+                        mode == AccountEdit.PASSWORD && value != confirm -> "Las contraseñas no coinciden"
+                        password.isBlank() -> "Escribe tu contraseña actual"
+                        else -> null
+                    }
+                    if (error != null) return@Button
+                    loading = true
+                    val newUser = if (mode == AccountEdit.USERNAME) value.trim() else username
+                    val newName = if (mode == AccountEdit.NAME) value.trim() else displayName
+                    val newPass = if (mode == AccountEdit.PASSWORD) value else ""
+                    vm.updateAccount(
+                        password, newUser, newName, newPass,
+                        onOk = {
+                            loading = false
+                            onSaved(
+                                when (mode) {
+                                    AccountEdit.NAME -> "Nombre actualizado"
+                                    AccountEdit.USERNAME -> "Ahora entras como @$newUser"
+                                    AccountEdit.PASSWORD -> "Contraseña cambiada"
+                                }
+                            )
+                        },
+                        onError = { loading = false; error = it },
+                    )
+                },
+                enabled = !loading,
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = FV.Surface, strokeWidth = 2.dp)
+                else Text("Guardar")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("Cancelar", color = FV.Muted) } },
+    )
 }
 
 @Composable

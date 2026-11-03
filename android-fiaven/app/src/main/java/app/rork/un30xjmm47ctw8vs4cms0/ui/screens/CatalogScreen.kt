@@ -45,7 +45,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.rork.un30xjmm47ctw8vs4cms0.data.Product
+import androidx.compose.foundation.verticalScroll
 import app.rork.un30xjmm47ctw8vs4cms0.ui.AppViewModel
+import app.rork.un30xjmm47ctw8vs4cms0.ui.DEFAULT_MIN_STOCK
 import app.rork.un30xjmm47ctw8vs4cms0.ui.bs
 import app.rork.un30xjmm47ctw8vs4cms0.ui.centsToInput
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.ClickableRow
@@ -227,8 +229,8 @@ fun CatalogScreen(vm: AppViewModel) {
             stockLeft = editing?.let { ledger.stock[it.id]?.left },
             initialBarcode = newBarcode,
             onDismiss = { creating = false; editing = null; newBarcode = null },
-            onSave = { name, cents, cost, code, stock ->
-                vm.saveProduct(editing?.id, name, cents, cost, code, stock)
+            onSave = { name, cents, cost, code, stock, min ->
+                vm.saveProduct(editing?.id, name, cents, cost, code, stock, min)
                 creating = false; editing = null; newBarcode = null
             },
             onDelete = editing?.let { p -> { vm.deleteProduct(p); editing = null } },
@@ -244,9 +246,10 @@ private fun ProductDialog(
     stockLeft: Int?,
     initialBarcode: String?,
     onDismiss: () -> Unit,
-    onSave: (String, Long, Long?, String?, Int?) -> Unit,
+    onSave: (String, Long, Long?, String?, Int?, Int?) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
+    var minText by remember { mutableStateOf(product?.minStock?.toString().orEmpty()) }
     var barcode by remember { mutableStateOf(product?.barcode ?: initialBarcode.orEmpty()) }
     val stockStart = stockLeft?.toString().orEmpty()
     var stock by remember { mutableStateOf(stockStart) }
@@ -265,7 +268,10 @@ private fun ProductDialog(
         containerColor = FV.Surface,
         title = { Text(if (product == null) "Nuevo producto" else "Editar producto") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 OutlinedTextField(
                     name, { name = it }, label = { Text("Nombre") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -312,6 +318,18 @@ private fun ProductDialog(
                         "Cuenta lo que tienes ahora; cada venta lo irá descontando.",
                         color = FV.Muted, style = MaterialTheme.typography.bodySmall,
                     )
+                    OutlinedTextField(
+                        minText, { minText = it.filter { c -> c.isDigit() }.take(5) },
+                        label = { Text("Avisar cuando queden") }, singleLine = true,
+                        placeholder = { Text("$DEFAULT_MIN_STOCK") },
+                        suffix = { Text("unidades") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Verás un aviso en Caja cuando quede esa cantidad o menos.",
+                        color = FV.Muted, style = MaterialTheme.typography.bodySmall,
+                    )
                 }
                 if (confirmDelete) Text("¿Borrar este producto? Las ventas anteriores no cambian.", color = FV.Danger)
             }
@@ -321,7 +339,7 @@ private fun ProductDialog(
                 enabled = name.isNotBlank() && cents != null && cents > 0 && !costInvalid && !stockInvalid,
                 onClick = {
                     val newStock = if (inventory && stock.trim() != stockStart) stockValue else null
-                    onSave(name, cents ?: 0, costCents, barcode, newStock)
+                    onSave(name, cents ?: 0, costCents, barcode, newStock, minText.toIntOrNull() ?: product?.minStock)
                 },
             ) { Text("Guardar") }
         },

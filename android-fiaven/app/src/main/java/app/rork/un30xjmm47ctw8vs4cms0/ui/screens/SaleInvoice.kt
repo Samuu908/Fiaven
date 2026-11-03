@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -72,9 +73,17 @@ private fun invoiceFile(sale: Sale) = "factura-" + saleNumber(sale).filter { it.
  * [justSaved] shows the green "Venta guardada" header right after checkout.
  */
 @Composable
-fun SaleInvoiceDialog(sale: Sale, businessName: String, justSaved: Boolean = false, onDismiss: () -> Unit) {
+fun SaleInvoiceDialog(
+    sale: Sale,
+    businessName: String,
+    justSaved: Boolean = false,
+    onAttendedBy: ((String) -> Unit)? = null,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
-    val bitmap = remember(sale, businessName) { renderSaleInvoice(sale, businessName) }
+    var attended by remember(sale.id) { mutableStateOf(sale.attendedBy ?: sale.authorName) }
+    var editing by remember { mutableStateOf(false) }
+    val bitmap = remember(sale, businessName, attended) { renderSaleInvoice(sale, businessName, attended) }
     val image = remember(bitmap) { bitmap.asImageBitmap() }
     var saved by remember { mutableStateOf(false) }
     val text = "Hola ${sale.customerName.orEmpty()}, aquí está tu factura ${saleNumber(sale)} por ${usd(sale.totalCents)}.".replace("  ", " ")
@@ -105,7 +114,18 @@ fun SaleInvoiceDialog(sale: Sale, businessName: String, justSaved: Boolean = fal
                         Image(image, "Vista de la factura", contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth())
                     }
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Person, null, tint = FV.Muted, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Atendido por ", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                    Text(
+                        attended.ifBlank { "—" }, style = MaterialTheme.typography.bodyMedium, color = FV.Ink,
+                        fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { editing = true }) { Text("Cambiar", color = FV.GreenDark) }
+                }
+                Spacer(Modifier.height(6.dp))
                 Button(
                     onClick = {
                         if (saveImageToGallery(context, bitmap, invoiceFile(sale))) {
@@ -140,6 +160,36 @@ fun SaleInvoiceDialog(sale: Sale, businessName: String, justSaved: Boolean = fal
             }
         }
     }
+
+    if (editing) {
+        AttendedByDialog(attended, onDismiss = { editing = false }) {
+            attended = it
+            editing = false
+            onAttendedBy?.invoke(it)
+        }
+    }
+}
+
+@Composable
+private fun AttendedByDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var value by remember { mutableStateOf(current) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = FV.Surface,
+        title = { Text("¿Quién atendió?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Este nombre sale en la factura.", color = FV.Muted, style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = value, onValueChange = { if (it.length <= 40) value = it },
+                    label = { Text("Nombre") }, singleLine = true, shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(enabled = value.isNotBlank(), onClick = { onSave(value.trim()) }) { Text("Listo", color = FV.GreenDark) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar", color = FV.Muted) } },
+    )
 }
 
 /** Type the quantity with the number keyboard instead of tapping + many times. 0 removes the item. */

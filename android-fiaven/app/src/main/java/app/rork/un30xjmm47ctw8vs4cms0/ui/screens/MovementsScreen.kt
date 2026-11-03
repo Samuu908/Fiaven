@@ -313,6 +313,7 @@ fun MovementsScreen(vm: AppViewModel, onBack: () -> Unit, onOpenCustomer: (Strin
             onOpenCustomer = (sale?.customerId ?: payment?.customerId)?.let { id -> { selected = null; onOpenCustomer(id) } },
             onDismiss = { selected = null },
             businessName = vm.session.value?.businessName.orEmpty(),
+            onAttendedBy = { s, n -> vm.setAttendedBy(s, n) },
         )
     }
 }

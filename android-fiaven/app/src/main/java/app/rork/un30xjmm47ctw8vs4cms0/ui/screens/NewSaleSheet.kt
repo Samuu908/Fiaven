@@ -89,6 +89,13 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
 import app.rork.un30xjmm47ctw8vs4cms0.ui.matches
 import app.rork.un30xjmm47ctw8vs4cms0.ui.parseDecimal
 import app.rork.un30xjmm47ctw8vs4cms0.ui.formatNumber
+import app.rork.un30xjmm47ctw8vs4cms0.data.PAY_METHODS
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material.icons.filled.Payments
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.ScanButton
 import app.rork.un30xjmm47ctw8vs4cms0.ui.components.rememberBarcodeScanner
@@ -127,6 +134,10 @@ class SaleDraft {
     var customerCedula by mutableStateOf("")
     var payCurrency by mutableStateOf("USD")
     var paid by mutableStateOf("")
+    val methods = mutableStateListOf<String>()
+    var mixed by mutableStateOf(false)
+    var mixedUsd by mutableStateOf("")
+    var mixedBs by mutableStateOf("")
     val units: Int get() = cart.sumOf { it.qty }
     val isEmpty: Boolean get() = cart.isEmpty() && customerName.isBlank()
 
@@ -134,6 +145,7 @@ class SaleDraft {
         cart.clear(); step = 0; query = ""; fiado = false
         customerName = ""; customerPhone = ""; customerId = null; customerCedula = ""
         payCurrency = "USD"; paid = ""
+        methods.clear(); mixed = false; mixedUsd = ""; mixedBs = ""
     }
 }
 
@@ -421,7 +433,12 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean, app
             }
 
             AnimatedVisibility(!fiado && total > 0) {
-                ChangeCalculator(total, ledger.effectiveRate, draft)
+                Column {
+                    PayMethodPicker(draft)
+                    MixedSwitch(draft, enabled = ledger.effectiveRate > 0)
+                    if (draft.mixed && ledger.effectiveRate > 0) MixedCalculator(total, ledger.effectiveRate, draft)
+                    else ChangeCalculator(total, ledger.effectiveRate, draft)
+                }
             }
 
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -537,9 +554,13 @@ fun NewSaleSheet(vm: AppViewModel, onDismiss: () -> Unit, onSaved: (Boolean, app
                                 customerName.isBlank() -> error = "Escribe el nombre del cliente"
                                 cedulaDigits(customerCedula).length < 5 -> error = "Escribe la cédula o RIF del cliente"
                                 else -> {
+                                    val mixedOn = !fiado && draft.mixed && ledger.effectiveRate > 0
                                     val sale = vm.saveSale(
                                         cart.map { SaleItem(it.productId, it.name, it.priceCents, it.qty, it.costCents) },
                                         fiado, customerName, customerPhone, customerId, customerCedula,
+                                        payMethod = if (fiado) null else draft.methods.joinToString(" + ").ifBlank { null },
+                                        paidUsdCents = if (mixedOn) parseDecimal(draft.mixedUsd)?.toDouble()?.let { Math.round(it * 100) } else null,
+                                        paidBsCents = if (mixedOn) parseDecimal(draft.mixedBs)?.toDouble()?.let { Math.round(it * 100) } else null,
                                     )
                                     val wasFiado = fiado
                                     draft.clear()
@@ -731,6 +752,118 @@ private fun ChangeCalculator(totalCents: Long, rate: Double, draft: SaleDraft) {
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Chips to mark how the customer paid (one or several). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PayMethodPicker(draft: SaleDraft) {
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Text("Método de pago", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+        Spacer(Modifier.height(6.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PAY_METHODS.forEach { m ->
+                val on = m in draft.methods
+                FilterChip(
+                    selected = on,
+                    onClick = { if (on) draft.methods.remove(m) else draft.methods.add(m) },
+                    label = { Text(m) },
+                    leadingIcon = if (on) { { Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) } } else null,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = FV.GreenSoft, selectedLabelColor = FV.GreenDark, selectedLeadingIconColor = FV.GreenDark,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MixedSwitch(draft: SaleDraft, enabled: Boolean) {
+    Surface(
+        onClick = { if (enabled) draft.mixed = !draft.mixed },
+        shape = RoundedCornerShape(16.dp), color = if (draft.mixed) FV.GreenTint else FV.Surface,
+        border = BorderStroke(1.dp, if (draft.mixed) FV.GreenSoft else FV.Hairline),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Pago mixto: sumar $ y Bs", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                Text(
+                    if (enabled) "Ej.: paga una parte en dólares y el resto en bolívares" else "Configura la tasa para usarlo",
+                    style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+                )
+            }
+            Switch(checked = draft.mixed, onCheckedChange = { draft.mixed = it }, enabled = enabled)
+        }
+    }
+}
+
+/** Mixed payment: dollars + bolívares received, shows what's missing or the change. */
+@Composable
+private fun MixedCalculator(totalCents: Long, rate: Double, draft: SaleDraft) {
+    val totalUsd = totalCents / 100.0
+    val u = parseDecimal(draft.mixedUsd)?.toDouble() ?: 0.0
+    val b = parseDecimal(draft.mixedBs)?.toDouble() ?: 0.0
+    val paidUsd = u + b / rate
+    val diff = paidUsd - totalUsd
+    val any = draft.mixedUsd.isNotBlank() || draft.mixedBs.isNotBlank()
+    Surface(
+        shape = RoundedCornerShape(20.dp), color = FV.Surface, border = BorderStroke(1.dp, FV.Hairline),
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Lo que recibes", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = draft.mixedUsd, onValueChange = { draft.mixedUsd = it }, label = { Text("En $") },
+                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    shape = RoundedCornerShape(16.dp), colors = fieldColors(), modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = draft.mixedBs, onValueChange = { draft.mixedBs = it }, label = { Text("En Bs") },
+                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    shape = RoundedCornerShape(16.dp), colors = fieldColors(), modifier = Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SuggestionChip(
+                    onClick = { draft.mixedBs = formatNumber(((totalUsd - u).coerceAtLeast(0.0)) * rate).replace(".", "") },
+                    label = { Text("Resto en Bs") },
+                )
+                SuggestionChip(
+                    onClick = { draft.mixedUsd = formatNumber((totalUsd - b / rate).coerceAtLeast(0.0)).replace(".", "") },
+                    label = { Text("Resto en $") },
+                )
+            }
+            Text(
+                "Suma: $ " + formatNumber(paidUsd) + "  ·  Bs " + formatNumber(paidUsd * rate) + "  de " + usd(totalCents),
+                style = MaterialTheme.typography.bodySmall, color = FV.Muted,
+            )
+            if (any) {
+                val missing = diff < -0.004
+                Surface(shape = RoundedCornerShape(14.dp), color = if (missing) FV.DangerTint else FV.GreenTint, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        if (missing) {
+                            Text("Falta por pagar", style = MaterialTheme.typography.bodyMedium, color = FV.Danger)
+                            Text(
+                                "$ " + formatNumber(-diff) + "  ·  Bs " + formatNumber(-diff * rate),
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = FV.Danger,
+                            )
+                        } else if (diff > 0.004) {
+                            Text("Vuelto a entregar", style = MaterialTheme.typography.bodyMedium, color = FV.Muted)
+                            Text(
+                                "$ " + formatNumber(diff) + "  o  Bs " + formatNumber(diff * rate),
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = FV.Green,
+                            )
+                        } else {
+                            Text("Pago completo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = FV.Green)
                         }
                     }
                 }

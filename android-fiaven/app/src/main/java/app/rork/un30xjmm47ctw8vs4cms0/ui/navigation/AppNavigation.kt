@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.BarChart
@@ -24,8 +23,6 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -105,6 +102,17 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.QuotesScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SupplierDetailScreen
 import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SuppliersScreen
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.QrCode2
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.BasicCalculatorScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.ExpensesScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.InsightsScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.OrdersScreen
+import app.rork.un30xjmm47ctw8vs4cms0.ui.screens.PayDataScreen
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
@@ -173,79 +181,9 @@ private fun MainShell(vm: AppViewModel) {
                             }
                         },
                         actions = {
-                            IconButton(onClick = { nav.navigate("calculadora") }) { Icon(Icons.Filled.Calculate, "Calculadora") }
+                            IconButton(onClick = { nav.navigate("calculadora-basica") }) { Icon(Icons.Filled.Calculate, "Calculadora") }
                             IconButton(onClick = { vm.syncNow() }) { Icon(Icons.Filled.Sync, "Sincronizar ahora") }
-                            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Más opciones") }
-                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("Movimientos") },
-                                    leadingIcon = { Icon(Icons.Filled.ReceiptLong, null) },
-                                    onClick = { menu = false; nav.navigate("movimientos") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Cierre de caja") },
-                                    leadingIcon = { Icon(Icons.Filled.Lock, null) },
-                                    onClick = { menu = false; nav.navigate("cierre") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Clientes") },
-                                    leadingIcon = { Icon(Icons.Filled.People, null) },
-                                    onClick = { menu = false; nav.navigate("clientes") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Proveedores") },
-                                    leadingIcon = { Icon(Icons.Filled.LocalShipping, null) },
-                                    onClick = { menu = false; nav.navigate("proveedores") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Presupuestos") },
-                                    leadingIcon = { Icon(Icons.Filled.Description, null) },
-                                    onClick = { menu = false; nav.navigate("presupuestos") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Notas") },
-                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.StickyNote2, null) },
-                                    onClick = { menu = false; nav.navigate("notas") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Calculadora") },
-                                    leadingIcon = { Icon(Icons.Filled.Calculate, null) },
-                                    onClick = { menu = false; nav.navigate("calculadora") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Resumen semanal") },
-                                    leadingIcon = { Icon(Icons.Filled.Insights, null) },
-                                    onClick = { menu = false; nav.navigate("resumen") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Equipo y accesos") },
-                                    leadingIcon = { Icon(Icons.Filled.Groups, null) },
-                                    onClick = { menu = false; nav.navigate("equipo") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (FV.isDark) "Modo claro" else "Modo oscuro") },
-                                    leadingIcon = { Icon(if (FV.isDark) Icons.Filled.LightMode else Icons.Filled.DarkMode, null) },
-                                    onClick = {
-                                        menu = false
-                                        ThemePrefs.set(context, if (FV.isDark) ThemeMode.LIGHT else ThemeMode.DARK)
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Mi cuenta") },
-                                    leadingIcon = { Icon(Icons.Filled.AccountCircle, null) },
-                                    onClick = { menu = false; nav.navigate("cuenta") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Acerca de") },
-                                    leadingIcon = { Icon(Icons.Filled.Info, null) },
-                                    onClick = { menu = false; nav.navigate("acerca") },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Cerrar sesión") },
-                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, null) },
-                                    onClick = { menu = false; vm.logout() },
-                                )
-                            }
+                            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Apps, "Más opciones") }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = FV.Canvas),
                     )
@@ -313,6 +251,8 @@ private fun MainShell(vm: AppViewModel) {
                     onOpenAccount = { nav.navigate("cuenta") },
                     onOpenMovements = { nav.navigate("movimientos") },
                     onOpenClosing = { nav.navigate("cierre") },
+                    onOpenCatalog = { goTab("catalogo") },
+                    onOpenOrders = { nav.navigate("pedidos") },
                 )
             }
             composable("fiados") { FiadosScreen(vm, onOpen = { nav.navigate("cliente/$it") }) }
@@ -363,6 +303,13 @@ private fun MainShell(vm: AppViewModel) {
                 SupplierDetailScreen(vm, supplierId = backStack.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
             }
             composable("presupuesto/nuevo") { QuoteBuilderScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("gastos") { ExpensesScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("pedidos") { OrdersScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("analisis") { InsightsScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("cobros") { PayDataScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("calculadora-basica") {
+                BasicCalculatorScreen(vm, onBack = { nav.popBackStack() }, onOpenDollar = { nav.navigate("calculadora") })
+            }
             composable("acerca") {
                 AboutScreen(vm, onBack = { nav.popBackStack() }, onSaved = { scope.launch { snackbar.showSnackbar("Créditos actualizados") } })
             }
@@ -414,7 +361,48 @@ private fun MainShell(vm: AppViewModel) {
 
     lastSale?.let { sale ->
         app.rork.un30xjmm47ctw8vs4cms0.ui.screens.SaleInvoiceDialog(
-            sale, vm.session.value?.businessName.orEmpty(), justSaved = true, onDismiss = { lastSale = null },
+            sale, vm.session.value?.businessName.orEmpty(), justSaved = true,
+            onAttendedBy = { vm.setAttendedBy(sale, it) },
+            onDismiss = { lastSale = null },
+        )
+    }
+
+    if (menu) {
+        fun go(r: String) { menu = false; nav.navigate(r) }
+        val low = ledger.lowStock.size
+        MoreSheet(
+            sections = listOf(
+                MoreSection("Ventas", listOf(
+                    MoreItem("Movimientos", Icons.Filled.ReceiptLong) { go("movimientos") },
+                    MoreItem("Cierre de caja", Icons.Filled.Lock) { go("cierre") },
+                    MoreItem("Pedidos", Icons.Filled.Event, tint = FV.AmberText, bg = FV.AmberTint) { go("pedidos") },
+                    MoreItem("Clientes", Icons.Filled.People) { go("clientes") },
+                    MoreItem("Presupuestos", Icons.Filled.Description) { go("presupuestos") },
+                    MoreItem("Modo inteligente", Icons.Filled.AutoAwesome, badge = if (low > 0) "$low" else null) { go("analisis") },
+                )),
+                MoreSection("Dinero", listOf(
+                    MoreItem("Gastos", Icons.Filled.Payments) { go("gastos") },
+                    MoreItem("Cobros", Icons.Filled.QrCode2) { go("cobros") },
+                    MoreItem("Proveedores", Icons.Filled.LocalShipping) { go("proveedores") },
+                    MoreItem("Resumen semanal", Icons.Filled.Insights) { go("resumen") },
+                )),
+                MoreSection("Herramientas", listOf(
+                    MoreItem("Calculadora", Icons.Filled.Calculate) { go("calculadora-basica") },
+                    MoreItem("Calculadora de dólares", Icons.Filled.CurrencyExchange) { go("calculadora") },
+                    MoreItem("Notas", Icons.AutoMirrored.Filled.StickyNote2) { go("notas") },
+                )),
+                MoreSection("Cuenta", listOf(
+                    MoreItem("Mi cuenta", Icons.Filled.AccountCircle) { go("cuenta") },
+                    MoreItem("Equipo y accesos", Icons.Filled.Groups) { go("equipo") },
+                    MoreItem(if (FV.isDark) "Modo claro" else "Modo oscuro", if (FV.isDark) Icons.Filled.LightMode else Icons.Filled.DarkMode) {
+                        menu = false
+                        ThemePrefs.set(context, if (FV.isDark) ThemeMode.LIGHT else ThemeMode.DARK)
+                    },
+                    MoreItem("Acerca de", Icons.Filled.Info) { go("acerca") },
+                    MoreItem("Cerrar sesión", Icons.AutoMirrored.Filled.Logout, tint = FV.Danger, bg = FV.DangerTint) { menu = false; vm.logout() },
+                )),
+            ),
+            onDismiss = { menu = false },
         )
     }
 }

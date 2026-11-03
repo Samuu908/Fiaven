@@ -69,6 +69,8 @@ import app.rork.un30xjmm47ctw8vs4cms0.ui.timeLabel
 import app.rork.un30xjmm47ctw8vs4cms0.ui.usd
 import app.rork.un30xjmm47ctw8vs4cms0.ui.hourLabel
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.WarningAmber
@@ -85,6 +87,8 @@ fun CajaScreen(
     onOpenAccount: () -> Unit,
     onOpenMovements: () -> Unit,
     onOpenClosing: () -> Unit,
+    onOpenCatalog: () -> Unit = {},
+    onOpenOrders: () -> Unit = {},
 ) {
     val security by vm.security.collectAsStateWithLifecycle()
     val ledger by vm.ledger.collectAsStateWithLifecycle()
@@ -175,6 +179,61 @@ fun CajaScreen(
                             )
                         }
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = FV.Danger)
+                    }
+                }
+            }
+        }
+
+        val dueOrders = data.orders.filter { it.status == "pending" && it.dueAt < startOfToday() + app.rork.un30xjmm47ctw8vs4cms0.ui.DAY_MS }
+        if (dueOrders.isNotEmpty()) {
+            item(key = "orders") {
+                val late = dueOrders.count { it.dueAt < startOfToday() }
+                val n = dueOrders.size
+                FvCard(
+                    container = if (late > 0) FV.DangerTint else FV.AmberTint,
+                    border = if (late > 0) FV.DangerSoft else FV.AmberSoft,
+                    onClick = onOpenOrders, contentPadding = PaddingValues(16.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Filled.Event, if (late > 0) FV.Danger else FV.AmberText, FV.Surface)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "$n ${if (n == 1) "pedido para entregar" else "pedidos para entregar"}",
+                                style = MaterialTheme.typography.titleSmall, color = if (late > 0) FV.Danger else FV.Ink,
+                            )
+                            Text(
+                                if (late > 0) "$late ${if (late == 1) "atrasado" else "atrasados"} · " + dueOrders.first().customerName
+                                else "Para hoy · " + dueOrders.joinToString(", ") { it.customerName }.take(60),
+                                style = MaterialTheme.typography.bodySmall, color = FV.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = FV.Muted)
+                    }
+                }
+            }
+        }
+
+        if (ledger.lowStock.isNotEmpty()) {
+            item(key = "lowstock") {
+                val low = ledger.lowStock
+                val out = low.count { it.left <= 0 }
+                FvCard(container = FV.AmberTint, border = FV.AmberSoft, onClick = onOpenCatalog, contentPadding = PaddingValues(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Filled.Inventory2, FV.AmberText, FV.Surface)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (low.size == 1) "1 producto por acabarse" else "${low.size} productos por acabarse",
+                                style = MaterialTheme.typography.titleSmall, color = FV.Ink,
+                            )
+                            Text(
+                                low.take(3).joinToString(" · ") { "${it.product.name} (${if (it.left <= 0) "agotado" else it.left})" } +
+                                    if (out > 0 && low.size > 3) " …" else "",
+                                style = MaterialTheme.typography.bodySmall, color = FV.AmberText, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = FV.Muted)
                     }
                 }
             }
@@ -301,6 +360,7 @@ fun CajaScreen(
             onOpenCustomer = (sale?.customerId ?: payment?.customerId)?.let { id -> { selected = null; onOpenCustomer(id) } },
             onDismiss = { selected = null },
             businessName = vm.session.value?.businessName.orEmpty(),
+            onAttendedBy = { s, n -> vm.setAttendedBy(s, n) },
         )
     }
 }
@@ -352,6 +412,7 @@ fun ActivityDetailDialog(
     onOpenCustomer: (() -> Unit)?,
     onDismiss: () -> Unit,
     businessName: String = "",
+    onAttendedBy: ((Sale, String) -> Unit)? = null,
 ) {
     var confirm by remember { mutableStateOf(false) }
     var showInvoice by remember { mutableStateOf(false) }
@@ -384,6 +445,9 @@ fun ActivityDetailDialog(
                     }
                     Text(bs(sale.totalCents, sale.rate) + " a tasa del momento", color = FV.Muted, style = MaterialTheme.typography.bodySmall)
                     Text("Registrado por ${sale.authorName} · ${timeLabel(sale.createdAt)}", color = FV.Muted, style = MaterialTheme.typography.bodySmall)
+                    app.rork.un30xjmm47ctw8vs4cms0.ui.salePaymentLine(sale).ifBlank { null }?.let {
+                        Text(it, color = FV.Ink, style = MaterialTheme.typography.bodySmall)
+                    }
                     sale.customerCedula?.let { Text("C.I./RIF: ${app.rork.un30xjmm47ctw8vs4cms0.ui.prettyCedula(it)}", color = FV.Muted, style = MaterialTheme.typography.bodySmall) }
                     if (!confirm) {
                         androidx.compose.material3.OutlinedButton(
@@ -403,6 +467,7 @@ fun ActivityDetailDialog(
                     if (payment.currency == "BS") {
                         Text("Pagó Bs ${app.rork.un30xjmm47ctw8vs4cms0.ui.formatNumber(payment.originalAmount)}", color = FV.Muted)
                     }
+                    if (payment.method.isNotBlank()) Text("Método: ${payment.method}", color = FV.Ink, style = MaterialTheme.typography.bodySmall)
                     Text("Registrado por ${payment.authorName} · ${timeLabel(payment.createdAt)}", color = FV.Muted, style = MaterialTheme.typography.bodySmall)
                 }
                 if (confirm) {
@@ -423,6 +488,10 @@ fun ActivityDetailDialog(
         },
     )
     if (showInvoice && sale != null) {
-        SaleInvoiceDialog(sale, businessName, onDismiss = { showInvoice = false })
+        SaleInvoiceDialog(
+            sale, businessName,
+            onAttendedBy = onAttendedBy?.let { cb -> { n: String -> cb(sale, n) } },
+            onDismiss = { showInvoice = false },
+        )
     }
 }

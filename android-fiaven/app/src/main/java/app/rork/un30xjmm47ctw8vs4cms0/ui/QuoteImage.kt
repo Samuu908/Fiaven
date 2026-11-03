@@ -98,7 +98,7 @@ fun renderQuote(quote: Quote, businessName: String): Bitmap = renderDoc(
 fun saleNumber(sale: Sale): String = "N° " + sale.id.filter { it.isLetterOrDigit() }.takeLast(6).uppercase()
 
 /** Sale receipt styled like an electronic invoice: customer, cédula, items, totals in $ and Bs. */
-fun renderSaleInvoice(sale: Sale, businessName: String): Bitmap = renderDoc(
+fun renderSaleInvoice(sale: Sale, businessName: String, attendedBy: String? = null): Bitmap = renderDoc(
     DocData(
         kind = if (sale.isFiado) "Nota de venta · a crédito" else "Nota de venta · contado",
         number = saleNumber(sale),
@@ -106,15 +106,29 @@ fun renderSaleInvoice(sale: Sale, businessName: String): Bitmap = renderDoc(
         customerCedula = sale.customerCedula.orEmpty(),
         customerPhone = sale.customerPhone.orEmpty(),
         createdAt = sale.createdAt,
-        rightInfo = "Hora ${hourLabel(sale.createdAt)} · Atendió ${sale.authorName}",
+        rightInfo = "Hora ${hourLabel(sale.createdAt)} · Atendió ${(attendedBy ?: sale.attendedBy)?.ifBlank { null } ?: sale.authorName}",
         items = sale.items,
         totalCents = sale.totalCents,
         rate = sale.rate,
-        note = "",
+        note = salePaymentLine(sale),
         footer = "Gracias por su compra. Monto en bolívares a la tasa del día de la venta.",
     ),
     businessName,
 )
+
+/** "Pago: Efectivo $ + Pago móvil · Recibido $ 10,00 + Bs 500,00". */
+fun salePaymentLine(sale: Sale): String {
+    if (sale.isFiado) return ""
+    val parts = ArrayList<String>()
+    sale.payMethod?.ifBlank { null }?.let { parts += "Pago: $it" }
+    if (sale.paidUsdCents != null || sale.paidBsCents != null) {
+        parts += "Recibido " + listOfNotNull(
+            sale.paidUsdCents?.takeIf { it > 0 }?.let { usd(it) },
+            sale.paidBsCents?.takeIf { it > 0 }?.let { "Bs " + formatNumber(it / 100.0) },
+        ).joinToString(" + ")
+    }
+    return parts.joinToString(" · ")
+}
 
 private fun renderDoc(quote: DocData, businessName: String): Bitmap {
     val title = paint(54f, 0xFFFFFFFF.toInt(), bold = true)

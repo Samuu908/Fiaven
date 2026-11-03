@@ -14,7 +14,71 @@ object Kinds {
     const val SUPPLIER = "supplier"
     const val PURCHASE = "purchase"
     const val SUPPLIER_PAYMENT = "spayment"
+    const val EXPENSE = "expense"
+    const val ORDER = "order"
 }
+
+/** Ways a customer can pay; stored as the visible label. */
+val PAY_METHODS = listOf(
+    "Efectivo $", "Efectivo Bs", "Pago móvil", "Transferencia", "Binance", "Zelle", "Punto de venta", "Moneda extranjera",
+)
+
+/** Money that left the business (rent, delivery, lunch…). Amount always in USD cents. */
+@Serializable
+data class Expense(
+    val id: String,
+    val amountCents: Long,
+    val currency: String = "USD",
+    val originalAmount: Double = 0.0,
+    val rate: Double = 0.0,
+    val category: String = "Otros",
+    val description: String = "",
+    val method: String = "",
+    val authorUser: String,
+    val authorName: String,
+    val createdAt: Long,
+    val voided: Boolean = false,
+)
+
+/** Customer order to deliver on a date. Amounts in USD cents. */
+@Serializable
+data class Order(
+    val id: String,
+    val customerName: String,
+    val customerPhone: String = "",
+    val description: String,
+    val totalCents: Long = 0,
+    val depositCents: Long = 0,
+    /** Start of the delivery day (local time). */
+    val dueAt: Long,
+    val status: String = "pending", // pending | delivered | cancelled
+    val note: String = "",
+    val authorName: String,
+    val createdAt: Long,
+    val updatedAt: Long = createdAt,
+)
+
+@Serializable
+data class PayQr(val id: String, val label: String, val attachmentId: String)
+
+@Serializable
+data class PagoMovil(val id: String, val bank: String, val phone: String, val cedula: String, val holder: String = "")
+
+/** Free account (Zelle, Binance, cuenta bancaria…): label + value to copy. */
+@Serializable
+data class PayAccount(val id: String, val label: String, val value: String, val holder: String = "")
+
+/** Owner-defined payment details shown to customers. */
+@Serializable
+data class PayData(
+    val qrs: List<PayQr> = emptyList(),
+    val mobile: List<PagoMovil> = emptyList(),
+    val accounts: List<PayAccount> = emptyList(),
+)
+
+/** WhatsApp numbers that receive the weekly summary. */
+@Serializable
+data class SummarySetting(val phones: List<String> = emptyList(), val set: Boolean = false)
 
 /** Someone the business buys from. */
 @Serializable
@@ -81,6 +145,8 @@ data class Product(
     /** Units counted on hand at [stockSince]; null = not tracked. */
     val stock: Int? = null,
     val stockSince: Long? = null,
+    /** Warn when stock reaches this many units (default 5). */
+    val minStock: Int? = null,
 )
 
 /** Free-form note shared by the whole business. */
@@ -139,7 +205,7 @@ data class BusinessPhoto(val data: String = "", val updatedAt: Long = 0, val aut
 
 val BACKUP_KINDS = setOf(
     Kinds.PRODUCT, Kinds.CUSTOMER, Kinds.SALE, Kinds.PAYMENT, Kinds.SETTING, Kinds.NOTE, Kinds.CLOSING, Kinds.QUOTE,
-    Kinds.SUPPLIER, Kinds.PURCHASE, Kinds.SUPPLIER_PAYMENT,
+    Kinds.SUPPLIER, Kinds.PURCHASE, Kinds.SUPPLIER_PAYMENT, Kinds.EXPENSE, Kinds.ORDER,
 )
 
 @Serializable
@@ -191,6 +257,13 @@ data class Sale(
     val voided: Boolean = false,
     val customerCedula: String? = null,
     val customerPhone: String? = null,
+    /** How it was paid ("Pago móvil", "Efectivo $ + Pago móvil"…). */
+    val payMethod: String? = null,
+    /** Mixed payment: what was received in each currency. */
+    val paidUsdCents: Long? = null,
+    val paidBsCents: Long? = null,
+    /** Name printed as "Atendido por" on the invoice. */
+    val attendedBy: String? = null,
 ) {
     val isFiado: Boolean get() = type == "fiado"
 }
@@ -208,6 +281,7 @@ data class Payment(
     val authorName: String,
     val createdAt: Long,
     val voided: Boolean = false,
+    val method: String = "",
 )
 
 @Serializable

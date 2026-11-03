@@ -1,5 +1,7 @@
 package app.rork.un30xjmm47ctw8vs4cms0.ui.screens
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import app.rork.un30xjmm47ctw8vs4cms0.ui.customerSubtitle
 import app.rork.un30xjmm47ctw8vs4cms0.ui.ClientStats
 import app.rork.un30xjmm47ctw8vs4cms0.ui.agoLabel
@@ -272,12 +274,13 @@ fun CustomerDetailScreen(vm: AppViewModel, customerId0: String, onBack: () -> Un
             onOpenCustomer = null,
             onDismiss = { selected = null },
             businessName = vm.session.value?.businessName.orEmpty(),
+            onAttendedBy = { s, n -> vm.setAttendedBy(s, n) },
         )
     }
 
     if (showPay) {
-        PaymentDialog(balance, ledger.effectiveRate, onDismiss = { showPay = false }) { cents, currency, original ->
-            vm.addPayment(balance, cents, currency, original)
+        PaymentDialog(balance, ledger.effectiveRate, onDismiss = { showPay = false }) { cents, currency, original, method ->
+            vm.addPayment(balance, cents, currency, original, method)
             showPay = false
         }
     }
@@ -298,9 +301,10 @@ private fun PaymentDialog(
     balance: CustomerBalance,
     rate: Double,
     onDismiss: () -> Unit,
-    onSave: (Long, String, Double) -> Unit,
+    onSave: (Long, String, Double, String) -> Unit,
 ) {
     var currency by remember { mutableStateOf("USD") }
+    var method by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     val value = parseDecimal(amount)?.toDouble()
     val canBs = rate > 0
@@ -312,7 +316,7 @@ private fun PaymentDialog(
         containerColor = FV.Surface,
         title = { Text("Registrar abono") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("${balance.name} debe ${usd(balance.owedCents)}", color = FV.Muted)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     SegmentedButton(selected = currency == "USD", onClick = { currency = "USD"; amount = "" }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Dólares") }
@@ -333,12 +337,14 @@ private fun PaymentDialog(
                 if (cents != null && currency == "BS") Text("Equivale a ${usd(cents)}", color = FV.Green)
                 if (cents != null && currency == "USD" && canBs) Text("Equivale a ${bs(cents, rate)}", color = FV.Muted)
                 if (tooMuch) Text("El abono es mayor que la deuda", color = FV.Danger, style = MaterialTheme.typography.bodySmall)
+                Text("Método de pago", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
+                app.rork.un30xjmm47ctw8vs4cms0.ui.components.PayMethodChips(method, { method = it })
             }
         },
         confirmButton = {
             TextButton(
                 enabled = cents != null && cents > 0 && !tooMuch,
-                onClick = { onSave(cents!!.coerceAtMost(balance.owedCents), currency, value ?: 0.0) },
+                onClick = { onSave(cents!!.coerceAtMost(balance.owedCents), currency, value ?: 0.0, method) },
             ) { Text("Guardar") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },

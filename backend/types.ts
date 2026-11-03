@@ -252,6 +252,16 @@ export type Database = {
         Args: { p_password: string; p_token: string }
         Returns: Json
       }
+      fv_account_update: {
+        Args: {
+          p_display_name: string
+          p_new_password: string
+          p_password: string
+          p_token: string
+          p_username: string
+        }
+        Returns: Json
+      }
       fv_credits_get: { Args: { p_token?: string }; Returns: Json }
       fv_credits_set: {
         Args: { p_credits: Json; p_token: string }
@@ -340,6 +350,15 @@ export type Database = {
       }
       fv_team_set_title: {
         Args: { p_title: string; p_token: string; p_username: string }
+        Returns: Json
+      }
+      fv_team_update: {
+        Args: {
+          p_display_name: string
+          p_new_password: string
+          p_token: string
+          p_username: string
+        }
         Returns: Json
       }
       fv_verify: { Args: { p_token: string }; Returns: Json }

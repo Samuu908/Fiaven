@@ -136,7 +136,7 @@ fun CalculatorScreen(vm: AppViewModel, onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Calculadora") },
+                title = { Text("Calculadora de dólares") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Atrás") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = FV.Canvas),
             )

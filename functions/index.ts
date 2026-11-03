@@ -112,6 +112,19 @@ export default {
       );
     }
 
+    if (path === "/account/update" && request.method === "POST") {
+      const b = await json(request);
+      return reply(
+        await rpc(env, "fv_account_update", {
+          p_token: token,
+          p_password: String(b.password ?? ""),
+          p_username: String(b.username ?? ""),
+          p_display_name: String(b.displayName ?? ""),
+          p_new_password: String(b.newPassword ?? ""),
+        }),
+      );
+    }
+
     if (path === "/account/delete" && request.method === "POST") {
       const b = await json(request);
       const result = await rpc(env, "fv_account_delete", { p_token: token, p_password: String(b.password ?? "") });
@@ -180,6 +193,18 @@ export default {
           p_token: token,
           p_username: String(b.username ?? ""),
           p_title: String(b.title ?? ""),
+        }),
+      );
+    }
+
+    if (path === "/team/update" && request.method === "POST") {
+      const b = await json(request);
+      return reply(
+        await rpc(env, "fv_team_update", {
+          p_token: token,
+          p_username: String(b.username ?? ""),
+          p_display_name: String(b.displayName ?? ""),
+          p_new_password: String(b.newPassword ?? ""),
         }),
       );
     }

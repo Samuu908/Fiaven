@@ -37,6 +37,10 @@ data class AppData(
     val suppliers: List<Supplier> = emptyList(),
     val purchases: List<Purchase> = emptyList(),
     val supplierPayments: List<SupplierPayment> = emptyList(),
+    val expenses: List<Expense> = emptyList(),
+    val orders: List<Order> = emptyList(),
+    val payData: PayData = PayData(),
+    val summary: SummarySetting = SummarySetting(),
     val dirtyKeys: Set<String> = emptySet(),
     val loaded: Boolean = false,
 )
@@ -61,6 +65,8 @@ class Repository private constructor(private val appContext: Context) {
         const val RATE_ID = "rate"
         const val INVENTORY_ID = "inventory"
         const val PHOTO_ID = "photo"
+        const val PAYDATA_ID = "paydata"
+        const val SUMMARY_ID = "summary"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -212,6 +218,19 @@ class Repository private constructor(private val appContext: Context) {
         api.setSecurity(requireToken(), password, question, normalizeAnswer(answer))
 
     /** Deletes the account on the server (the whole business if owner) and wipes this phone. */
+    /** Changes this user's username, visible name and/or password. Keeps local data (same business). */
+    suspend fun updateAccount(password: String, username: String, displayName: String, newPassword: String) {
+        val auth = api.updateAccount(requireToken(), password, username.trim().lowercase(), displayName.trim(), newPassword)
+        prefs.edit()
+            .putString("token", auth.token)
+            .putString("username", auth.user.username)
+            .putString("display_name", auth.user.displayName)
+            .putString("role", auth.user.role)
+            .putString("title", auth.user.title)
+            .apply()
+        _session.value = loadSession()
+    }
+
     suspend fun deleteAccount(password: String) {
         api.deleteAccount(requireToken(), password)
         stopSessionWork()
@@ -271,6 +290,10 @@ class Repository private constructor(private val appContext: Context) {
         if (username == _session.value?.username) refreshMe()
     }
     suspend fun removeMember(username: String) = api.removeMember(requireToken(), username)
+    suspend fun updateMember(username: String, displayName: String, newPassword: String) {
+        api.updateMember(requireToken(), username, displayName.trim(), newPassword)
+        if (username == _session.value?.username) refreshMe()
+    }
 
     private fun requireToken(): String = _session.value?.token ?: throw ApiException("Sin sesión", 401)
 
@@ -292,6 +315,10 @@ class Repository private constructor(private val appContext: Context) {
         val suppliers = ArrayList<Supplier>()
         val purchases = ArrayList<Purchase>()
         val supplierPayments = ArrayList<SupplierPayment>()
+        val expenses = ArrayList<Expense>()
+        val orders = ArrayList<Order>()
+        var payData = PayData()
+        var summary = SummarySetting()
         val dirty = HashSet<String>()
         for (row in rows) {
             if (row.dirty) dirty += "${row.kind}:${row.id}"
@@ -306,6 +333,8 @@ class Repository private constructor(private val appContext: Context) {
                         RATE_ID -> rate = AppJson.decodeFromString<RateSetting>(row.data)
                         INVENTORY_ID -> inventory = AppJson.decodeFromString<InventorySetting>(row.data)
                         PHOTO_ID -> photo = AppJson.decodeFromString<BusinessPhoto>(row.data).takeIf { it.data.isNotBlank() }
+                        PAYDATA_ID -> payData = AppJson.decodeFromString<PayData>(row.data)
+                        SUMMARY_ID -> summary = AppJson.decodeFromString<SummarySetting>(row.data)
                     }
                     Kinds.NOTE -> notes += AppJson.decodeFromString<Note>(row.data)
                     Kinds.CLOSING -> closings += AppJson.decodeFromString<Closing>(row.data)
@@ -313,6 +342,8 @@ class Repository private constructor(private val appContext: Context) {
                     Kinds.SUPPLIER -> suppliers += AppJson.decodeFromString<Supplier>(row.data)
                     Kinds.PURCHASE -> purchases += AppJson.decodeFromString<Purchase>(row.data)
                     Kinds.SUPPLIER_PAYMENT -> supplierPayments += AppJson.decodeFromString<SupplierPayment>(row.data)
+                    Kinds.EXPENSE -> expenses += AppJson.decodeFromString<Expense>(row.data)
+                    Kinds.ORDER -> orders += AppJson.decodeFromString<Order>(row.data)
                 }
             }
         }
@@ -330,6 +361,10 @@ class Repository private constructor(private val appContext: Context) {
             suppliers = suppliers.sortedBy { it.name.lowercase() },
             purchases = purchases.sortedByDescending { it.createdAt },
             supplierPayments = supplierPayments.sortedByDescending { it.createdAt },
+            expenses = expenses.sortedByDescending { it.createdAt },
+            orders = orders.sortedBy { it.dueAt },
+            payData = payData,
+            summary = summary,
             dirtyKeys = dirty,
             loaded = true,
         )
@@ -384,6 +419,18 @@ class Repository private constructor(private val appContext: Context) {
 
     fun saveSupplierPayment(payment: SupplierPayment) =
         writeLocal(Kinds.SUPPLIER_PAYMENT, payment.id, AppJson.encodeToString(SupplierPayment.serializer(), payment))
+
+    fun saveExpense(expense: Expense) =
+        writeLocal(Kinds.EXPENSE, expense.id, AppJson.encodeToString(Expense.serializer(), expense))
+
+    fun saveOrder(order: Order, deleted: Boolean = false) =
+        writeLocal(Kinds.ORDER, order.id, AppJson.encodeToString(Order.serializer(), order), deleted)
+
+    fun savePayData(data: PayData) =
+        writeLocal(Kinds.SETTING, PAYDATA_ID, AppJson.encodeToString(PayData.serializer(), data))
+
+    fun saveSummarySetting(setting: SummarySetting) =
+        writeLocal(Kinds.SETTING, SUMMARY_ID, AppJson.encodeToString(SummarySetting.serializer(), setting))
 
     // ---------- attachments (invoice photos, transfer screenshots) ----------
 

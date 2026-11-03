@@ -60,6 +60,8 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 val ROLE_OPTIONS = listOf("Dueño", "Administrador", "Gerente", "Subjefe", "Encargado", "Cajero", "Empleado")
 
@@ -151,7 +153,7 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
                     Spacer(Modifier.padding(4.dp))
                     Text(
                         "Solo las personas con usuario y contraseña pueden registrar ventas en este negocio." +
-                            if (isOwner) " Toca a una persona para asignarle su rol." else "",
+                            if (isOwner) " Toca a una persona para cambiar su nombre, rol o contraseña." else "",
                         style = MaterialTheme.typography.bodySmall, color = FV.Muted,
                     )
                 }
@@ -252,15 +254,31 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
 
     editingRole?.let { m ->
         var title by remember(m.username) { mutableStateOf(m.roleLabel) }
+        var newName by remember(m.username) { mutableStateOf(m.displayName) }
+        var newPass by remember(m.username) { mutableStateOf("") }
+        val isMe = m.username == session?.username
         var busy by remember(m.username) { mutableStateOf(false) }
         var err by remember(m.username) { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { if (!busy) editingRole = null },
             containerColor = FV.Surface,
             icon = { Icon(Icons.Filled.Badge, null, tint = FV.GreenDark) },
-            title = { Text("Rol de ${m.displayName}") },
+            title = { Text("Editar a ${m.displayName}") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        newName, { newName = it.take(60) }, label = { Text("Nombre visible") }, singleLine = true,
+                        shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (!isMe) {
+                        OutlinedTextField(
+                            newPass, { newPass = it }, label = { Text("Contraseña nueva (opcional)") }, singleLine = true,
+                            supportingText = { Text("Si la olvidó: escribe una nueva y entrégasela") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Text("Rol", style = MaterialTheme.typography.titleSmall, color = FV.Ink)
                     RolePicker(title, forOwner = m.role == "owner") { title = it }
                     Text(
                         if (m.role == "owner") "Sigue teniendo control total del negocio."
@@ -272,12 +290,20 @@ fun TeamScreen(vm: AppViewModel, onBack: () -> Unit) {
             },
             confirmButton = {
                 Button(
-                    enabled = !busy && title.isNotBlank(),
+                    enabled = !busy && title.isNotBlank() && newName.trim().length >= 2 && (newPass.isEmpty() || newPass.length >= 6),
                     onClick = {
                         busy = true; err = null
-                        vm.setMemberTitle(m.username, title,
-                            onOk = { busy = false; editingRole = null; reload++ },
-                            onError = { busy = false; err = it })
+                        val nameChanged = newName.trim() != m.displayName
+                        val finish = {
+                            if (nameChanged || newPass.isNotEmpty()) {
+                                vm.updateMember(m.username, if (nameChanged) newName.trim() else "", newPass,
+                                    onOk = { busy = false; editingRole = null; reload++ },
+                                    onError = { busy = false; err = it })
+                            } else { busy = false; editingRole = null; reload++ }
+                        }
+                        if (title != m.roleLabel) {
+                            vm.setMemberTitle(m.username, title, onOk = { finish() }, onError = { busy = false; err = it })
+                        } else finish()
                     },
                 ) { Text(if (busy) "Guardando…" else "Guardar") }
             },

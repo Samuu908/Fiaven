@@ -27,6 +27,10 @@ import app.rork.un30xjmm47ctw8vs4cms0.data.Session
 import app.rork.un30xjmm47ctw8vs4cms0.data.Supplier
 import app.rork.un30xjmm47ctw8vs4cms0.data.Purchase
 import app.rork.un30xjmm47ctw8vs4cms0.data.SupplierPayment
+import app.rork.un30xjmm47ctw8vs4cms0.data.Expense
+import app.rork.un30xjmm47ctw8vs4cms0.data.Order
+import app.rork.un30xjmm47ctw8vs4cms0.data.PayData
+import app.rork.un30xjmm47ctw8vs4cms0.data.SummarySetting
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -75,9 +79,15 @@ data class Ledger(
     val groups: CustomerGroups = CustomerGroups.EMPTY,
     /** Every customer with purchase count, spending and frequency. */
     val clients: List<ClientStats> = emptyList(),
+    /** Tracked products at or below their warning level (inventory on). */
+    val lowStock: List<LowStock> = emptyList(),
 ) {
     val overdueCents: Long get() = overdue.sumOf { it.owedCents }
 }
+
+data class LowStock(val product: Product, val left: Int, val min: Int)
+
+const val DEFAULT_MIN_STOCK = 5
 
 data class SupplierBalance(
     val supplierId: String,
@@ -171,6 +181,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             for (p in payments.take(60)) add(paymentActivity(p, me, d.dirtyKeys))
         }.sortedByDescending { it.createdAt }.take(60)
 
+        val stock = stockInfo(d)
         return Ledger(
             effectiveRate = rate,
             rateIsBcv = useBcv,
@@ -181,7 +192,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             activity = activity,
             overdue = balances.filter { it.overdue },
             todayClosing = d.closings.find { it.id == dayKey(today) },
-            stock = stockInfo(d),
+            stock = stock,
+            lowStock = if (!d.inventory.enabled) emptyList() else d.products.mapNotNull { p ->
+                val left = stock[p.id]?.left ?: return@mapNotNull null
+                val min = p.minStock ?: DEFAULT_MIN_STOCK
+                if (left <= min) LowStock(p, left, min) else null
+            }.sortedBy { it.left },
             groups = groups,
             clients = buildClientStats(groups, d.sales, balances.associate { it.customerId to it.owedCents }),
         )
@@ -264,6 +280,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         customerPhone: String,
         existingCustomerId: String?,
         customerCedula: String = "",
+        payMethod: String? = null,
+        paidUsdCents: Long? = null,
+        paidBsCents: Long? = null,
     ): Sale? {
         val s = session.value ?: return null
         val now = System.currentTimeMillis()
@@ -310,12 +329,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 createdAt = now,
                 customerCedula = cedula,
                 customerPhone = phone,
+                payMethod = payMethod?.ifBlank { null },
+                paidUsdCents = paidUsdCents,
+                paidBsCents = paidBsCents,
             )
         repo.saveSale(sale)
         return sale
     }
 
-    fun addPayment(balance: CustomerBalance, amountCents: Long, currency: String, original: Double) {
+    fun addPayment(balance: CustomerBalance, amountCents: Long, currency: String, original: Double, method: String = "") {
         val s = session.value ?: return
         repo.savePayment(
             Payment(
@@ -329,8 +351,75 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 authorUser = s.username,
                 authorName = s.displayName,
                 createdAt = System.currentTimeMillis(),
+                method = method,
             )
         )
+    }
+
+    /** Saves the "Atendido por" name printed on a sale's invoice. */
+    fun setAttendedBy(sale: Sale, name: String) {
+        val n = name.trim()
+        if ((sale.attendedBy ?: "") == n) return
+        val s = session.value ?: return
+        // Workers can't edit saved sales on the server; keep it as a local print preference for them.
+        if (s.isOwner) repo.saveSale(sale.copy(attendedBy = n.ifBlank { null }))
+    }
+
+    // ---------- account ----------
+
+    fun updateAccount(password: String, username: String, displayName: String, newPassword: String, onOk: () -> Unit, onError: (String) -> Unit) =
+        viewModelScope.launch {
+            try { repo.updateAccount(password, username, displayName, newPassword); onOk() } catch (e: Exception) { onError(friendly(e)) }
+        }
+
+    fun updateMember(username: String, displayName: String, newPassword: String, onOk: () -> Unit, onError: (String) -> Unit) =
+        viewModelScope.launch {
+            try { repo.updateMember(username, displayName, newPassword); onOk() } catch (e: Exception) { onError(friendly(e)) }
+        }
+
+    // ---------- expenses ----------
+
+    fun addExpense(cents: Long, currency: String, original: Double, category: String, description: String, method: String, createdAt: Long) {
+        val s = session.value ?: return
+        repo.saveExpense(
+            Expense(
+                id = repo.newId(), amountCents = cents, currency = currency, originalAmount = original,
+                rate = ledger.value.effectiveRate, category = category, description = description.trim(), method = method,
+                authorUser = s.username, authorName = s.displayName, createdAt = createdAt,
+            )
+        )
+    }
+
+    fun voidExpense(e: Expense) = repo.saveExpense(e.copy(voided = true))
+
+    // ---------- orders ----------
+
+    fun saveOrder(
+        id: String?, customerName: String, customerPhone: String, description: String,
+        totalCents: Long, depositCents: Long, dueAt: Long, note: String,
+    ) {
+        val s = session.value
+        val now = System.currentTimeMillis()
+        val existing = id?.let { oid -> data.value.orders.find { it.id == oid } }
+        val o = existing?.copy(
+            customerName = customerName.trim(), customerPhone = customerPhone.trim(), description = description.trim(),
+            totalCents = totalCents, depositCents = depositCents, dueAt = dueAt, note = note.trim(), updatedAt = now,
+        ) ?: Order(
+            id = repo.newId(), customerName = customerName.trim(), customerPhone = customerPhone.trim(),
+            description = description.trim(), totalCents = totalCents, depositCents = depositCents, dueAt = dueAt,
+            note = note.trim(), authorName = s?.displayName.orEmpty(), createdAt = now,
+        )
+        repo.saveOrder(o)
+    }
+
+    fun setOrderStatus(o: Order, status: String) = repo.saveOrder(o.copy(status = status, updatedAt = System.currentTimeMillis()))
+    fun deleteOrder(o: Order) = repo.saveOrder(o, deleted = true)
+
+    // ---------- owner settings ----------
+
+    fun savePayData(p: PayData) { if (session.value?.isOwner == true) repo.savePayData(p) }
+    fun saveSummaryPhones(phones: List<String>) {
+        if (session.value?.isOwner == true) repo.saveSummarySetting(SummarySetting(phones.map { it.trim() }.filter { it.isNotBlank() }, set = true))
     }
 
     /** Another person who already has this cédula or phone (editing to it would merge both). */
@@ -359,12 +448,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun voidPayment(payment: Payment) = repo.savePayment(payment.copy(voided = true))
 
     /** [newStock] = units on hand right now (recount); null keeps the previous count. */
-    fun saveProduct(id: String?, name: String, priceCents: Long, costCents: Long?, barcode: String?, newStock: Int?) {
+    fun saveProduct(id: String?, name: String, priceCents: Long, costCents: Long?, barcode: String?, newStock: Int?, minStock: Int? = null) {
         val existing = id?.let { pid -> data.value.products.find { it.id == pid } }
         val now = System.currentTimeMillis()
         val code = barcode?.trim()?.ifBlank { null }
-        var p = existing?.copy(name = name.trim(), priceCents = priceCents, costCents = costCents, barcode = code)
-            ?: Product(repo.newId(), name.trim(), priceCents, now, costCents, barcode = code)
+        var p = existing?.copy(name = name.trim(), priceCents = priceCents, costCents = costCents, barcode = code, minStock = minStock)
+            ?: Product(repo.newId(), name.trim(), priceCents, now, costCents, barcode = code, minStock = minStock)
         if (newStock != null) p = p.copy(stock = newStock, stockSince = now)
         repo.saveProduct(p)
     }

@@ -40,6 +40,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -159,7 +161,10 @@ fun SummaryScreen(vm: AppViewModel, onBack: () -> Unit) {
                 item { ProfitCard(total, rate) }
             }
 
-            item { SendSummaryCard(week, session?.businessName.orEmpty(), rate, isOwner) }
+            item {
+                val phones = if (data.summary.set) data.summary.phones else SUMMARY_RECIPIENTS
+                SendSummaryCard(week, session?.businessName.orEmpty(), rate, isOwner, phones) { vm.saveSummaryPhones(it) }
+            }
 
             item { SectionHeader("Día por día") }
 
@@ -382,8 +387,12 @@ fun openWhatsAppChat(context: android.content.Context, phone: String, text: Stri
 }
 
 @Composable
-private fun SendSummaryCard(week: WeekSummary, businessName: String, rate: Double, isOwner: Boolean) {
+private fun SendSummaryCard(
+    week: WeekSummary, businessName: String, rate: Double, isOwner: Boolean,
+    phones: List<String>, onSavePhones: (List<String>) -> Unit,
+) {
     val context = LocalContext.current
+    var editPhones by remember { mutableStateOf(false) }
     var weekend by rememberSaveable { mutableStateOf(true) }
     val days = if (weekend) week.days.takeLast(2) else week.days
     val period = if (weekend) "${dayName(days.first().start)} y ${dayName(days.last().start).replaceFirstChar { it.lowercase() }}"
@@ -410,7 +419,10 @@ private fun SendSummaryCard(week: WeekSummary, businessName: String, rate: Doubl
         }
         Spacer(Modifier.height(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SUMMARY_RECIPIENTS.forEach { phone ->
+            if (phones.isEmpty()) {
+                Text("No hay números guardados.", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+            }
+            phones.forEach { phone ->
                 OutlinedButton(
                     onClick = {
                         val text = summaryMessage(
@@ -430,5 +442,63 @@ private fun SendSummaryCard(week: WeekSummary, businessName: String, rate: Doubl
             "Se abre WhatsApp con el mensaje listo; solo toca enviar.",
             style = MaterialTheme.typography.bodySmall, color = FV.Muted,
         )
+        if (isOwner) {
+            androidx.compose.material3.TextButton(onClick = { editPhones = true }) {
+                Text("Cambiar números", color = FV.GreenDark)
+            }
+        }
     }
+    if (editPhones) {
+        SummaryPhonesDialog(phones, onDismiss = { editPhones = false }) { onSavePhones(it); editPhones = false }
+    }
+}
+
+/** "0424-123 4567" or "+58 424..." → "584241234567". */
+private fun normalizeWaPhone(raw: String): String {
+    val d = raw.filter { it.isDigit() }
+    return when {
+        d.startsWith("0") && d.length == 11 -> "58" + d.drop(1)
+        d.length == 10 && d.startsWith("4") -> "58$d"
+        else -> d
+    }
+}
+
+@Composable
+private fun SummaryPhonesDialog(current: List<String>, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
+    val list = remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(current.ifEmpty { listOf("") }) } }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = FV.Surface,
+        title = { Text("Números del resumen") },
+        text = {
+            Column(
+                Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("El resumen se env\u00eda por WhatsApp a estos n\u00fameros.", style = MaterialTheme.typography.bodySmall, color = FV.Muted)
+                list.forEachIndexed { i, v ->
+                    androidx.compose.material3.OutlinedTextField(
+                        value = v, onValueChange = { t -> list[i] = t.filter { c -> c.isDigit() || c in "+ -" }.take(20) },
+                        label = { Text("Número ${i + 1}") }, placeholder = { Text("0424 123 4567") }, singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+                        trailingIcon = {
+                            androidx.compose.material3.IconButton(onClick = { list.removeAt(i) }) {
+                                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "Quitar")
+                            }
+                        },
+                        shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (list.size < 6) {
+                    androidx.compose.material3.TextButton(onClick = { list.add("") }) { Text("+ Agregar número", color = FV.GreenDark) }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = {
+                onSave(list.map { normalizeWaPhone(it) }.filter { it.length >= 10 }.distinct())
+            }) { Text("Guardar", color = FV.GreenDark) }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancelar", color = FV.Muted) } },
+    )
 }
